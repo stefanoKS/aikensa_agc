@@ -17,8 +17,9 @@ from aikensa.cam_thread import CameraThread, CameraConfig
 from aikensa.calibration_thread import CalibrationThread, CalibrationConfig
 from aikensa.inspection_thread import InspectionThread, InspectionConfig
 
-from aikensa.sio_thread import ServerMonitorThread, ServerConfig
-from aikensa.time_thread import TimeMonitorThread
+from aikensa.thread.sio_thread import ServerMonitorThread, ServerConfig
+from aikensa.thread.time_thread import TimeMonitorThread
+from aikensa.thread.modbus_thread import ModbusThread, ModbusConfig
 
 
 # List of UI files to be loaded
@@ -44,9 +45,6 @@ UI_FILES = [
     "aikensa/qtui/empty.ui", #empty 18
     "aikensa/qtui/empty.ui", #empty 19
     "aikensa/qtui/empty.ui", #empty 20
-    # "aikensa/qtui/dailyTenken4go_01.ui",  # index 21
-    # "aikensa/qtui/dailyTenken4go_02.ui",  # index 22
-    # "aikensa/qtui/dailyTenken4go_03.ui",  # index 23
 ]
 
 

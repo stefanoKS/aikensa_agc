@@ -59,7 +59,7 @@ Camera①Calib.</string>
      <enum>Qt::Horizontal</enum>
     </property>
    </widget>
-   <widget class="QPushButton" name="PJ30LHbutton">
+   <widget class="QPushButton" name="AGClineButton">
     <property name="geometry">
      <rect>
       <x>60</x>
@@ -78,7 +78,7 @@ Camera①Calib.</string>
      <string notr="true">background-color: rgb(225, 225, 18);</string>
     </property>
     <property name="text">
-     <string>J30 LH</string>
+     <string>AGC 自動ライン</string>
     </property>
    </widget>
    <widget class="Line" name="line_2">
@@ -116,33 +116,6 @@ Camera①Calib.</string>
     </property>
     <property name="text">
      <string>部品リスト</string>
-    </property>
-    <property name="alignment">
-     <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
-    </property>
-   </widget>
-   <widget class="QLabel" name="label_2">
-    <property name="geometry">
-     <rect>
-      <x>70</x>
-      <y>190</y>
-      <width>361</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>15</pointsize>
-      <weight>75</weight>
-      <bold>true</bold>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: rgb(238, 238, 236);</string>
-    </property>
-    <property name="text">
-     <string>キャリブレーシオン、点検な</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
@@ -306,7 +279,7 @@ Camera①Calib.</string>
      <set>Qt::AlignCenter</set>
     </property>
    </widget>
-   <widget class="QLabel" name="status_sio">
+   <widget class="QLabel" name="status_PLC">
     <property name="geometry">
      <rect>
       <x>1600</x>
@@ -361,11 +334,11 @@ Camera①Calib.</string>
      <set>Qt::AlignCenter</set>
     </property>
    </widget>
-   <widget class="QPushButton" name="dailytenkenbutton">
+   <widget class="QPushButton" name="dailytenkenButton">
     <property name="geometry">
      <rect>
       <x>60</x>
-      <y>350</y>
+      <y>330</y>
       <width>231</width>
       <height>91</height>
      </rect>
@@ -382,72 +355,6 @@ Camera①Calib.</string>
     <property name="text">
      <string extracomment="Generate intrinsic camera parameter">日常点検
 Daily Check</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="PJ30RHbutton">
-    <property name="geometry">
-     <rect>
-      <x>300</x>
-      <y>540</y>
-      <width>231</width>
-      <height>101</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>15</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">background-color: rgb(225, 200, 18);</string>
-    </property>
-    <property name="text">
-     <string>J30 RH</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="PJ59JLHbutton">
-    <property name="geometry">
-     <rect>
-      <x>740</x>
-      <y>540</y>
-      <width>231</width>
-      <height>101</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>15</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">background-color: rgb(255, 67, 139);</string>
-    </property>
-    <property name="text">
-     <string>J59J LH</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="PJ59JRHbutton">
-    <property name="geometry">
-     <rect>
-      <x>980</x>
-      <y>540</y>
-      <width>231</width>
-      <height>101</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>15</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">background-color: rgb(255, 67, 110);</string>
-    </property>
-    <property name="text">
-     <string>J59J RH</string>
     </property>
    </widget>
    <widget class="QLabel" name="label_7">
@@ -485,7 +392,7 @@ Daily Check</string>
      <x>0</x>
      <y>0</y>
      <width>1920</width>
-     <height>21</height>
+     <height>22</height>
     </rect>
    </property>
   </widget>

@@ -1,56 +1,99 @@
-# modbus_qthread.py
+# modbus_server_thread.py
 
-from PyQt5.QtCore import QThread, pyqtSignal
-from pymodbus.server.sync import StartTcpServer
-from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
-from pymodbus.datastore import ModbusSequentialDataBlock
-from pymodbus.device import ModbusDeviceIdentification
-
-import threading
-import time
+import asyncio
 import logging
+from PyQt5.QtCore import QThread
+from pymodbus.server import StartAsyncTcpServer
+from pymodbus.device import ModbusDeviceIdentification
+from pymodbus.datastore import (
+    ModbusSequentialDataBlock,
+    ModbusSlaveContext,
+    ModbusServerContext,
+)
+
+# Optional: tune logging level if you want server‐side debug/info prints
+_logger = logging.getLogger(__name__)
+_logger.setLevel(logging.INFO)
 
 
 class ModbusServerThread(QThread):
-    registers_updated = pyqtSignal(dict)  # Emits {address: value}
+    """
+    Run a TCP‐only asyncio Modbus server inside a QThread.
+    - host: the interface to bind (e.g. "0.0.0.0" or "192.168.1.100")
+    - port: the TCP port (default 502)
+    """
 
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-        self._running = True
+    def __init__(self, host: str = "0.0.0.0", port: int = 502, parent=None):
+        super().__init__(parent)
+        self.host = host
+        self.port = port
+        self.loop = None
+        self.context = None
 
-        self.store = ModbusSlaveContext(
-            di=ModbusSequentialDataBlock(0, [0]*1000),
-            co=ModbusSequentialDataBlock(0, [0]*1000),
-            hr=ModbusSequentialDataBlock(0, [0]*1000),
-            ir=ModbusSequentialDataBlock(0, [0]*1000)
+    def setup_context(self):
+        """
+        Prepare a single‐slave ModbusServerContext with:
+            - 100 discrete inputs (DI)
+            - 100 coils (CO)
+            - 100 holding registers (HR)
+            - 100 input registers (IR)
+        You can tweak the size and initial values as needed.
+        """
+        store = ModbusSlaveContext(
+            di=ModbusSequentialDataBlock(0, [0] * 100),
+            co=ModbusSequentialDataBlock(0, [0] * 100),
+            hr=ModbusSequentialDataBlock(0, [0] * 100),
+            ir=ModbusSequentialDataBlock(0, [0] * 100),
         )
-        self.context = ModbusServerContext(slaves=self.store, single=True)
+        # single=True means all requests map to this one slave context
+        self.context = ModbusServerContext(slaves=store, single=True)
 
-        self.identity = ModbusDeviceIdentification()
-        self.identity.VendorName = 'HIROSHIMAKASEI'
-        self.identity.ProductCode = 'AGC_Jidou_Line'
-        self.identity.ProductName = 'AGC_Jidou_Line Modbus TCP Server'
-        self.identity.ModelName = 'Modbus TCP Server'
-        self.identity.MajorMinorRevision = '1.0'
-
-        self.monitor_thread = threading.Thread(target=self.monitor_registers, daemon=True)
+    def setup_identity(self):
+        """
+        Return a ModbusDeviceIdentification object.
+        You can adjust any fields you like.
+        """
+        identity = ModbusDeviceIdentification()
+        identity.VendorName = "PyQtApp"
+        identity.ProductCode = "PM"
+        identity.VendorUrl = "https://example.com"
+        identity.ProductName = "Modbus Server"
+        identity.ModelName = "ModbusTCP"
+        identity.MajorMinorRevision = "1.0"
+        return identity
 
     def run(self):
-        self.monitor_thread.start()
-        StartTcpServer(self.context, identity=self.identity,
-                       address=(self.config.ip_address, self.config.port))
+        """
+        This is called when .start() is invoked on the thread.
+        We create a fresh asyncio loop, set up context/identity, start the TCP server,
+        and then call loop.run_forever().
+        """
+        # 1) Create a brand‐new event loop for this thread
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+        # 2) Build datastore context
+        self.setup_context()
+
+        # 3) Build device identity
+        identity = self.setup_identity()
+
+        # 4) Start the async TCP server; once that completes, loop.run_forever() will keep it alive.
+        coro = StartAsyncTcpServer(
+            context=self.context,
+            identity=identity,
+            address=(self.host, self.port),
+        )
+        # run_until_complete ensures StartAsyncTcpServer binds/listens before we go into run_forever()
+        self.loop.run_until_complete(coro)
+
+        # 5) Hand control over to the loop so the server can serve requests
+        self.loop.run_forever()
 
     def stop(self):
-        self._running = False
-
-    def monitor_registers(self):
-        while self._running:
-            values = self.context[0x00].getValues(3, self.config.register_start, self.config.register_count)
-            data = {addr: val for addr, val in enumerate(values, start=self.config.register_start)}
-            logging.info(f"Registers: {data}")
-            self.registers_updated.emit(data)
-            time.sleep(self.config.update_interval)
-
-    def write_register(self, address, value):
-        self.context[0x00].setValues(3, address, [value])
+        """
+        Call this from the GUI thread to stop the server cleanly.
+        It schedules loop.stop() on the event loop, which tears down the TCP listener.
+        """
+        if self.loop and self.loop.is_running():
+            self.loop.call_soon_threadsafe(self.loop.stop)

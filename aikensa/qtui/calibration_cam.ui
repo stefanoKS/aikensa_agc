@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>CameraCalibration1</class>
- <widget class="QMainWindow" name="CameraCalibration1">
+ <class>CameraCalibration</class>
+ <widget class="QMainWindow" name="CameraCalibration">
   <property name="enabled">
    <bool>true</bool>
   </property>
@@ -45,7 +45,7 @@
      <string notr="true">color: rgb(238, 238, 236);</string>
     </property>
     <property name="text">
-     <string>CAMERA① CALIBRATION</string>
+     <string>CAMERA CALIBRATION</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignCenter</set>
@@ -88,14 +88,14 @@
      <string notr="true">background-color: rgb(211, 215, 207);</string>
     </property>
     <property name="text">
-     <string>Calibrate Cam 1</string>
+     <string>Calibrate Cam</string>
     </property>
    </widget>
    <widget class="QPushButton" name="calibSingleFrame">
     <property name="geometry">
      <rect>
       <x>310</x>
-      <y>900</y>
+      <y>890</y>
       <width>121</width>
       <height>41</height>
      </rect>
@@ -288,7 +288,7 @@
      <x>0</x>
      <y>0</y>
      <width>1926</width>
-     <height>21</height>
+     <height>22</height>
     </rect>
    </property>
   </widget>

@@ -25,9 +25,6 @@ from typing import List, Tuple
 from aikensa.parts_config.sound import play_do_sound, play_picking_sound, play_re_sound, play_mi_sound, play_alarm_sound, play_konpou_sound, play_keisoku_sound
 
 from ultralytics import YOLO
-from aikensa.parts_config.hoodFR_65820W030P import partcheck
-from aikensa.parts_config.P658207YA0A_SEALASSYHOODFR import partcheck as P658207YA0A_partcheck
-
 from PIL import ImageFont, ImageDraw, Image
 
 @dataclass
@@ -68,6 +65,8 @@ class InspectionThread(QThread):
     part3Cam = pyqtSignal(QImage)
     part4Cam = pyqtSignal(QImage)
     part5Cam = pyqtSignal(QImage)
+
+    AGC_InspectionStatus = pyqtSignal(list, list)
 
     today_numofPart_signal = pyqtSignal(list)
     current_numofPart_signal = pyqtSignal(list)
@@ -183,11 +182,10 @@ class InspectionThread(QThread):
         self.InspectionStatus = [None]*5
 
         self.widget_dir_map = {
-            8: "65820W030P",
-            9: "658207YA0A",
+            5: "AGC_Line"
         }
 
-        self.InspectionWaitTime = 15.0
+        self.InspectionWaitTime = 5.0
         self.InspectionTimeStart = None
 
         self.test = 0
@@ -200,26 +198,6 @@ class InspectionThread(QThread):
             self.mysqlPassword = credentials["pass"]
             self.mysqlHost = credentials["host"]
             self.mysqlHostPort = credentials["port"]
-
-    def release_all_camera(self):
-        if self.cap_cam0 is not None:
-            self.cap_cam0.release()
-            print(f"Camera 0 released.")
-        if self.cap_cam1 is not None:
-            self.cap_cam1.release()
-            print(f"Camera 1 released.")
-        if self.cap_cam2 is not None:
-            self.cap_cam2.release()
-            print(f"Camera 2 released.")
-        if self.cap_cam3 is not None:
-            self.cap_cam3.release()
-            print(f"Camera 3 released.")
-        if self.cap_cam4 is not None:
-            self.cap_cam4.release()
-            print(f"Camera 4 released.")
-        if self.cap_cam5 is not None:
-            self.cap_cam5.release()
-            print(f"Camera 5 released.")
 
     def initialize_single_camera(self, camID):
         if self.cap_cam is not None:
@@ -238,70 +216,12 @@ class InspectionThread(QThread):
             else:
                 print(f"Initialized Camera on ID {camID}")
 
-    def initialize_all_camera(self):
-        if self.cap_cam0 is not None:
-            self.cap_cam0.release()
-            print(f"Camera 0 released.")
-        if self.cap_cam1 is not None:
-            self.cap_cam1.release()
-            print(f"Camera 1 released.")
-        if self.cap_cam2 is not None:
-            self.cap_cam2.release()
-            print(f"Camera 2 released.")
-        if self.cap_cam3 is not None:
-            self.cap_cam3.release()
-            print(f"Camera 3 released.")
-        if self.cap_cam4 is not None:
-            self.cap_cam4.release()
-            print(f"Camera 4 released.")
-        if self.cap_cam5 is not None:
-            self.cap_cam5.release()
-            print(f"Camera 5 released.")
-        
-        self.cap_cam0 = initialize_camera(0)
-        self.cap_cam1 = initialize_camera(1)
-        self.cap_cam2 = initialize_camera(2)
-        self.cap_cam3 = initialize_camera(3)
-        self.cap_cam4 = initialize_camera(4)
-        self.cap_cam5 = initialize_camera(5)
-
-        if not self.cap_cam0.isOpened():
-            print(f"Failed to open camera with ID 0")
-            self.cap_cam0 = None
-        else:
-            print(f"Initialized Camera on ID 0")
-        if not self.cap_cam1.isOpened():
-            print(f"Failed to open camera with ID 1")
-            self.cap_cam1 = None
-        else:
-            print(f"Initialized Camera on ID 1")
-        if not self.cap_cam2.isOpened():
-            print(f"Failed to open camera with ID 2")
-            self.cap_cam2 = None
-        else:
-            print(f"Initialized Camera on ID 2")
-        if not self.cap_cam3.isOpened():
-            print(f"Failed to open camera with ID 3")
-            self.cap_cam3 = None
-        else:
-            print(f"Initialized Camera on ID 3")
-        if not self.cap_cam4.isOpened():
-            print(f"Failed to open camera with ID 4")
-            self.cap_cam4 = None
-        else:
-            print(f"Initialized Camera on ID 4")
-        if not self.cap_cam5.isOpened():
-            print(f"Failed to open camera with ID 5")
-            self.cap_cam5 = None
-        else:
-            print(f"Initialized Camera on ID 5")
-
     def run(self):
         #initialize the database
         if not os.path.exists("./aikensa/inspection_results"):
             os.makedirs("./aikensa/inspection_results")
 
-        self.conn = sqlite3.connect('./aikensa/inspection_results/database_results.db')
+        self.conn = sqlite3.connect('./aikensa/inspection_results/agc_database_results.db')
         self.cursor = self.conn.cursor()
         # Create the table if it doesn't exist
         self.cursor.execute('''
@@ -314,21 +234,11 @@ class InspectionThread(QThread):
             timestampDate TEXT,
             deltaTime REAL,
             kensainName TEXT,
-            detected_pitch TEXT,
-            delta_pitch TEXT,
-            total_length REAL
+            status TEXT,
+            NGreason TEXT,
+            PPMS TEXT
         )
         ''')
-
-        # List of columns to add
-        columns_to_add = [
-            ("resultpitch", "TEXT"),
-            ("status", "TEXT"),
-            ("NGreason", "TEXT")
-        ]
-
-        # Using the function to add columns
-        self.add_columns(self.cursor, "inspection_results", columns_to_add)
 
         self.conn.commit()
 
@@ -351,22 +261,19 @@ class InspectionThread(QThread):
         if self.mysql_conn is not None:
             self.mysql_cursor = self.mysql_conn.cursor()
             self.mysql_cursor.execute('''
-            CREATE TABLE IF NOT EXISTS inspection_results (
-                id INTEGER PRIMARY KEY AUTO_INCREMENT,
-                partName TEXT,
-                numofPart TEXT,
-                currentnumofPart TEXT,
-                timestampHour TEXT,
-                timestampDate TEXT,
-                deltaTime REAL,
-                kensainName TEXT,
-                detected_pitch TEXT,
-                delta_pitch TEXT,
-                total_length REAL,
-                resultpitch TEXT,
-                status TEXT,
-                NGreason TEXT
-            )
+                CREATE TABLE IF NOT EXISTS AGC_tapehari_inspection_results (
+                    id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                    partName TEXT,
+                    numofPart TEXT,
+                    currentnumofPart TEXT,
+                    timestampHour TEXT,
+                    timestampDate TEXT,
+                    deltaTime REAL,
+                    kensainName TEXT,
+                    status TEXT,
+                    NGreason TEXT,
+                    PPMS TEXT
+                )
             ''')
             self.mysql_conn.commit()
 
@@ -378,20 +285,17 @@ class InspectionThread(QThread):
 
         self.current_cameraID = self.inspection_config.cameraID
         self.initialize_single_camera(self.current_cameraID)
-        self._save_dir = f"aikensa/cameracalibration/"
 
-        for key, value in self.widget_dir_map.items():
-            self.inspection_config.current_numofPart[key] = self.get_last_entry_currentnumofPart(value)
-            self.inspection_config.today_numofPart[key] = self.get_last_entry_total_numofPart(value)
-
-
+        # for key, value in self.widget_dir_map.items():
+        #     self.inspection_config.current_numofPart[key] = self.get_last_entry_currentnumofPart(value)
+        #     self.inspection_config.today_numofPart[key] = self.get_last_entry_total_numofPart(value)
 
         while self.running:
 
             if self.inspection_config.widget == 0:
                 self.inspection_config.cameraID = -1
 
-            if self.inspection_config.widget == 8:
+            if self.inspection_config.widget == 5:
                 if self.inspection_config.furyou_plus or self.inspection_config.furyou_minus or self.inspection_config.kansei_plus or self.inspection_config.kansei_minus or self.inspection_config.furyou_plus_10 or self.inspection_config.furyou_minus_10 or self.inspection_config.kansei_plus_10 or self.inspection_config.kansei_minus_10:
                     self.inspection_config.current_numofPart[self.inspection_config.widget], self.inspection_config.today_numofPart[self.inspection_config.widget] = self.manual_adjustment(
                         self.inspection_config.current_numofPart[self.inspection_config.widget], self.inspection_config.today_numofPart[self.inspection_config.widget],
@@ -421,12 +325,10 @@ class InspectionThread(QThread):
                             currentnumofPart = [0, 0], 
                             deltaTime = 0.0,
                             kensainName = self.inspection_config.kensainNumber, 
-                            detected_pitch_str = "COUNTERRESET", 
-                            delta_pitch_str = "COUNTERRESET", 
-                            total_length=0,
                             resultPitch = "COUNTERRESET",
                             status = "COUNTERRESET",
-                            NGreason = "COUNTERRESET")
+                            NGreason = "COUNTERRESET",
+                            PPMS = "COUNTERRESET")  
 
                 #initialize single camera with id 0
                 
@@ -477,7 +379,7 @@ class InspectionThread(QThread):
                                 for i in range(len(self.InspectionImages)):
                                     #Do YOLO inference to check whether part exist
 
-
+                                    print(f"Part {i+1} Inference Start")
 
                                     #if part exists, do another inference to check whether the part is positioned correctly
 
@@ -489,53 +391,25 @@ class InspectionThread(QThread):
                                     # print(self.InspectionResult_DetectionID[i])
 
                                     if self.InspectionResult_Status[i] == "OK":
-                                        self.ethernet_status_green_hold_status[i] = 1
-                                        self.ethernet_status_red_tenmetsu_status[i] = 0
-                                        self.ethernet_status_red_hold_status[i] = 0
-
                                         self.inspection_config.current_numofPart[self.inspection_config.widget][0] += 1
                                         self.inspection_config.today_numofPart[self.inspection_config.widget][0] += 1
-
-                                        #Play konpou sound if the current_numofPart is dividable by 25
-                                        if self.inspection_config.current_numofPart[self.inspection_config.widget][0] % 25 == 0 and self.inspection_config.current_numofPart[self.inspection_config.widget][0] != 0:
-                                            play_konpou_sound()
-
                                         self.InspectionStatus[i] = "OK"
 
                                     elif self.InspectionResult_Status[i] == "NG":
-                                        self.ethernet_status_green_hold_status[i] = 0
-                                        self.ethernet_status_red_tenmetsu_status[i] = 0
-                                        self.ethernet_status_red_hold_status[i] = 1
                                         self.inspection_config.current_numofPart[self.inspection_config.widget][1] += 1
                                         self.inspection_config.today_numofPart[self.inspection_config.widget][1] += 1
-
                                         self.InspectionStatus[i] = "NG"
-
-                                    else:
-                                        self.ethernet_status_green_hold_status[i] = 0
-                                        self.ethernet_status_red_tenmetsu_status[i] = 0
-                                        self.ethernet_status_red_hold_status[i] = 0
 
                                     self.save_result_database(partname = self.widget_dir_map[self.inspection_config.widget],
                                         numofPart = self.inspection_config.today_numofPart[self.inspection_config.widget], 
                                         currentnumofPart = self.inspection_config.current_numofPart[self.inspection_config.widget],
                                         deltaTime = 0.0,
                                         kensainName = self.inspection_config.kensainNumber, 
-                                        detected_pitch_str = self.InspectionResult_PitchMeasured[i], 
-                                        delta_pitch_str = self.InspectionResult_DeltaPitch[i], 
-                                        total_length=0,
                                         resultPitch = self.InspectionResult_PitchResult[i], 
                                         status = self.InspectionResult_Status[i], 
-                                        NGreason = self.InspectionResult_NGReason[i])
-                                    
-                                    
-                                    #save hole image
-                                    self.save_image_hole(self.holeFrame1, False, "P1")
-                                    self.save_image_hole(self.holeFrame2, False, "P2")
-                                    self.save_image_hole(self.holeFrame3, False, "P3")
-                                    self.save_image_hole(self.holeFrame4, False, "P4")
-                                    self.save_image_hole(self.holeFrame5, False, "P5")
-                                    
+                                        NGreason = self.InspectionResult_NGReason[i],
+                                        PPMS = "PPMS")
+
                                     self.hoodFR_InspectionStatus.emit(self.InspectionStatus)
 
                                 self.save_image_result(self.part1Crop, self.InspectionImages[0], self.InspectionResult_Status[0], True, "P1")
@@ -544,33 +418,14 @@ class InspectionThread(QThread):
                                 self.save_image_result(self.part4Crop, self.InspectionImages[3], self.InspectionResult_Status[3], True, "P4")
                                 self.save_image_result(self.part5Crop, self.InspectionImages[4], self.InspectionResult_Status[4], True, "P5")
 
-                                self.InspectionImages[0] = self.downSampling(self.InspectionImages[0], width=1771, height=24)
-                                self.InspectionImages[1] = self.downSampling(self.InspectionImages[1], width=1771, height=24)
-                                self.InspectionImages[2] = self.downSampling(self.InspectionImages[2], width=1771, height=24)
-                                self.InspectionImages[3] = self.downSampling(self.InspectionImages[3], width=1771, height=24)
-                                self.InspectionImages[4] = self.downSampling(self.InspectionImages[4], width=1771, height=24)
+                                self.InspectionImages[0] = self.downSampling(self.InspectionImages[0], width=1701, height=121)
+                                self.InspectionImages[1] = self.downSampling(self.InspectionImages[1], width=1701, height=121)
+                                self.InspectionImages[2] = self.downSampling(self.InspectionImages[2], width=1701, height=121)
+                                self.InspectionImages[3] = self.downSampling(self.InspectionImages[3], width=1701, height=121)
+                                self.InspectionImages[4] = self.downSampling(self.InspectionImages[4], width=1701, height=121)
 
-                                self.hoodFR_InspectionResult_PitchMeasured.emit(self.InspectionResult_PitchMeasured)
-                                self.hoodFR_InspectionResult_PitchResult.emit(self.InspectionResult_PitchResult)
                                 print("Inspection Finished")
                                 #Remember that list is mutable
-                                self.ethernet_status_red_tenmetsu_status_prev = self.ethernet_status_red_tenmetsu_status_prev.copy()
-                                self.ethernet_status_green_hold_status_prev = self.ethernet_status_green_hold_status.copy()
-                                self.ethernet_status_red_hold_status_prev = self.ethernet_status_red_hold_status.copy()
-
-                                self.InspectionImages_prev[0] = self.InspectionImages[0]
-                                self.InspectionImages_prev[1] = self.InspectionImages[1]
-                                self.InspectionImages_prev[2] = self.InspectionImages[2]
-                                self.InspectionImages_prev[3] = self.InspectionImages[3]
-                                self.InspectionImages_prev[4] = self.InspectionImages[4]
-
-                                self.InspectionResult_PitchMeasured_prev = self.InspectionResult_PitchMeasured.copy()
-                                self.InspectionResult_PitchResult_prev = self.InspectionResult_PitchResult.copy()
-                                self.InspectionStatus_prev = self.InspectionStatus.copy()
-
-                                self.ethernet_status_red_tenmetsu.emit(self.ethernet_status_red_tenmetsu_status)
-                                self.ethernet_status_green_hold.emit(self.ethernet_status_green_hold_status)
-                                self.ethernet_status_red_hold.emit(self.ethernet_status_red_hold_status)
 
                                 self.part1Cam.emit(self.converQImageRGB(self.InspectionImages[0]))
                                 self.part2Cam.emit(self.converQImageRGB(self.InspectionImages[1]))
@@ -584,10 +439,6 @@ class InspectionThread(QThread):
                 self.today_numofPart_signal.emit(self.inspection_config.today_numofPart)
                 self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
             
-                self.ethernet_status_red_tenmetsu.emit(self.ethernet_status_red_tenmetsu_status)
-                self.ethernet_status_green_hold.emit(self.ethernet_status_green_hold_status)
-                self.ethernet_status_red_hold.emit(self.ethernet_status_red_hold_status)
-
                 # Emit status based on the red tenmetsu status
 
                 
@@ -871,15 +722,54 @@ class InspectionThread(QThread):
         path_AGCJ59JRH_partDetectionModel = "./aikensa/models/AGCJ59JRH_PART.pt"
         path_AGCJ59JRH_setDetectionModel = "./aikensa/models/AGCJ59JRH_SET.pt"
 
-        AGCJ30LH_partDetectionModel = YOLO(path_AGCJ30LH_partDetectionModel)
-        AGCJ30LH_setDetectionModel = YOLO(path_AGCJ30LH_setDetectionModel)
-        AGCJ30RH_partDetectionModel = YOLO(path_AGCJ30RH_partDetectionModel)
-        AGCJ30RH_setDetectionModel = YOLO(path_AGCJ30RH_setDetectionModel)
+        # Initialize models as None if file does not exist, otherwise load the model
+        if os.path.exists(path_AGCJ30LH_partDetectionModel):
+            AGCJ30LH_partDetectionModel = YOLO(path_AGCJ30LH_partDetectionModel)
+        else:
+            print(f"Model file {path_AGCJ30LH_partDetectionModel} does not exist. Initializing as None.")
+            AGCJ30LH_partDetectionModel = None
 
-        AGCJ59JLH_partDetectionModel = YOLO(path_AGCJ59JLH_partDetectionModel)
-        AGCJ59JLH_setDetectionModel = YOLO(path_AGCJ59JLH_setDetectionModel)
-        AGCJ59JRH_partDetectionModel = YOLO(path_AGCJ59JRH_partDetectionModel)
-        AGCJ59JRH_setDetectionModel = YOLO(path_AGCJ59JRH_setDetectionModel)
+        if os.path.exists(path_AGCJ30LH_setDetectionModel):
+            AGCJ30LH_setDetectionModel = YOLO(path_AGCJ30LH_setDetectionModel)
+        else:
+            print(f"Model file {path_AGCJ30LH_setDetectionModel} does not exist. Initializing as None.")
+            AGCJ30LH_setDetectionModel = None
+
+        if os.path.exists(path_AGCJ30RH_partDetectionModel):
+            AGCJ30RH_partDetectionModel = YOLO(path_AGCJ30RH_partDetectionModel)
+        else:
+            print(f"Model file {path_AGCJ30RH_partDetectionModel} does not exist. Initializing as None.")
+            AGCJ30RH_partDetectionModel = None
+
+        if os.path.exists(path_AGCJ30RH_setDetectionModel):
+            AGCJ30RH_setDetectionModel = YOLO(path_AGCJ30RH_setDetectionModel)
+        else:
+            print(f"Model file {path_AGCJ30RH_setDetectionModel} does not exist. Initializing as None.")
+            AGCJ30RH_setDetectionModel = None
+
+        if os.path.exists(path_AGCJ59JLH_partDetectionModel):
+            AGCJ59JLH_partDetectionModel = YOLO(path_AGCJ59JLH_partDetectionModel)
+        else:
+            print(f"Model file {path_AGCJ59JLH_partDetectionModel} does not exist. Initializing as None.")
+            AGCJ59JLH_partDetectionModel = None
+
+        if os.path.exists(path_AGCJ59JLH_setDetectionModel):
+            AGCJ59JLH_setDetectionModel = YOLO(path_AGCJ59JLH_setDetectionModel)
+        else:
+            print(f"Model file {path_AGCJ59JLH_setDetectionModel} does not exist. Initializing as None.")
+            AGCJ59JLH_setDetectionModel = None
+
+        if os.path.exists(path_AGCJ59JRH_partDetectionModel):
+            AGCJ59JRH_partDetectionModel = YOLO(path_AGCJ59JRH_partDetectionModel)
+        else:
+            print(f"Model file {path_AGCJ59JRH_partDetectionModel} does not exist. Initializing as None.")
+            AGCJ59JRH_partDetectionModel = None
+
+        if os.path.exists(path_AGCJ59JRH_setDetectionModel):
+            AGCJ59JRH_setDetectionModel = YOLO(path_AGCJ59JRH_setDetectionModel)
+        else:
+            print(f"Model file {path_AGCJ59JRH_setDetectionModel} does not exist. Initializing as None.")
+            AGCJ59JRH_setDetectionModel = None
 
         self.AGCJ30LH_partDetectionModel = AGCJ30LH_partDetectionModel
         self.AGCJ30LH_setDetectionModel = AGCJ30LH_setDetectionModel

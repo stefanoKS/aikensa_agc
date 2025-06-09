@@ -1,0 +1,75 @@
+# To read from PLC
+# 0 through 19 (inclusive) map to partASCIICode
+0: partASCIICode_1
+1: partASCIICode_2
+2: partASCIICode_3
+3: partASCIICode_4
+4: partASCIICode_5
+5: partASCIICode_6
+6: partASCIICode_7
+7: partASCIICode_8
+8: partASCIICode_9
+9: partASCIICode_10
+10: partASCIICode_11
+11: partASCIICode_12
+12: partASCIICode_13
+13: partASCIICode_14
+14: partASCIICode_15
+15: partASCIICode_16
+16: partASCIICode_17
+17: partASCIICode_18
+18: partASCIICode_19
+19: partASCIICode_20
+
+20: IV4_KensaNumber
+21: DryingTemperature
+22: DryingTemperature_UpperLimit
+23: DryingTemperature_LowerLimit
+24: DryingTime
+
+50: partNumber
+
+# 52 through 59 map to lotASCIICode
+52: lotASCIICode_1
+53: lotASCIICode_2
+54: lotASCIICode_3
+55: lotASCIICode_4
+56: lotASCIICode_5
+57: lotASCIICode_6
+58: lotASCIICode_7
+59: lotASCIICode_8
+
+
+60: lotNumber_front
+61: lotNumber_back
+62: serialNumber_front
+63: serialNumber_back
+
+70: AIKENSA_KensaResults_set_partexist
+71: AIKENSA_KensaResults_set_results_OK
+72: AIKENSA_KensaResults_set_results_NG
+
+80: IV4_KensaResults_details_1
+81: IV4_KensaResults_details_2
+82: IV4_KensaResults_details_3
+83: IV4_KensaResults_details_4
+84: IV4_KensaResults_details_5
+85: IV4_KensaResults_OK
+86: IV4_KensaResults_NG
+
+100: InstructionCode
+
+# To be read by PLC
+
+126: return_serialNumber_front
+127: return_serialNumber_back
+
+134: return_AIKENSA_KensaResults_set_partexist
+135: return_AIKENSA_KensaResults_set_results_OK
+136: return_AIKENSA_KensaResults_set_results_NG
+
+154: return_AIKENSA_KensaResults_tapeinspection_partexist
+155: return_AIKENSA_KensaResults_tapeinspection_results_OK
+156: return_AIKENSA_KensaResults_tapeinspection_results_NG
+
+164: return_state_code

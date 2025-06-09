@@ -13,7 +13,7 @@ class TimeMonitorThread(QThread):
 
     def run(self):
         while self.running:
-            current_time = time.strftime("%Y年%m月%d日 %H:%M")
+            current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             self.time_signal.emit(current_time)
             time.sleep(self.check_interval)
 

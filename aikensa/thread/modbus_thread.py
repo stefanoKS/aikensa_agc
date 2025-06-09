@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from PyQt5.QtCore import QThread
+from PyQt5.QtCore import QThread, pyqtSignal
 from pymodbus.server import StartAsyncTcpServer
 from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.datastore import (
@@ -22,6 +22,7 @@ class ModbusServerThread(QThread):
     - host: the interface to bind (e.g. "0.0.0.0" or "192.168.1.100")
     - port: the TCP port (default 502)
     """
+    holdingUpdated = pyqtSignal(dict)
 
     def __init__(self, host: str = "0.0.0.0", port: int = 502, parent=None):
         super().__init__(parent)
@@ -29,22 +30,29 @@ class ModbusServerThread(QThread):
         self.port = port
         self.loop = None
         self.context = None
+        
+        # You can change these to control which registers get polled:
+        self._poll_start = 0    # starting address of HR to poll
+        self._poll_count = 200   # how many registers to read each time
+        self._poll_interval = 0.5  # seconds between polls
 
     def setup_context(self):
         """
         Prepare a single‐slave ModbusServerContext with:
-            - 100 discrete inputs (DI)
-            - 100 coils (CO)
-            - 100 holding registers (HR)
-            - 100 input registers (IR)
+            - 1000 discrete inputs (DI)
+            - 1000 coils (CO)
+            - 1000 holding registers (HR)
+            - 1000 input registers (IR)
         You can tweak the size and initial values as needed.
         """
+        size = 1000
         store = ModbusSlaveContext(
-            di=ModbusSequentialDataBlock(0, [0] * 100),
-            co=ModbusSequentialDataBlock(0, [0] * 100),
-            hr=ModbusSequentialDataBlock(0, [0] * 100),
-            ir=ModbusSequentialDataBlock(0, [0] * 100),
+            di=ModbusSequentialDataBlock(0, [0] * size),
+            co=ModbusSequentialDataBlock(0, [0] * size),
+            hr=ModbusSequentialDataBlock(0, [0] * size),
+            ir=ModbusSequentialDataBlock(0, [0] * size),
         )
+
         # single=True means all requests map to this one slave context
         self.context = ModbusServerContext(slaves=store, single=True)
 
@@ -62,13 +70,74 @@ class ModbusServerThread(QThread):
         identity.MajorMinorRevision = "1.0"
         return identity
 
+    async def _poll_holding_registers(self):
+        """
+        An asyncio task that runs in the same event loop as the server.
+        It sleeps `self._poll_interval` seconds, then reads HR[start : start+count].
+        If those values differ from the last read, it emits `holdingUpdated`.
+        """
+        prev_values = None
+        while True:
+            await asyncio.sleep(self._poll_interval)
+
+            # Make sure context is ready
+            if self.context is None:
+                continue
+
+            # Read holding registers via function code 3
+            try:
+                raw = self.context[0].getValues(
+                    3,                     # 3 = holding register
+                    self._poll_start,      # starting address
+                    self._poll_count       # number of registers
+                )
+            except Exception as e:
+                _logger.error(f"Error reading holding registers: {e}")
+                continue
+
+            # Build a simple dict: {address: value}
+            new_values = {
+                self._poll_start + i: raw[i]
+                for i in range(len(raw))
+            }
+
+            # Emit only if changed
+            if new_values != prev_values:
+                prev_values = new_values
+                # Emit the dict to any connected slots
+                self.holdingUpdated.emit(new_values)
+                print("New values are emitted")
+
+            # Print all values for debugging
+            # _logger.debug(f"Polled HR[{self._poll_start}..{self._poll_start + self._poll_count - 1}] = {raw}")
+
+    def write_holding_registers(self, start_addr: int, values: list[int]):
+        """
+        Thread‐safe way to write into holding registers from outside this thread.
+        Schedules the setValues call on the server’s asyncio loop.
+
+        Example: write_holding_registers(112, [v0, v1, ..., v63]) to set HR[112..175].
+        """
+        def _do_write():
+            try:
+                # 3 = function code for holding registers
+                self.context[0].setValues(3, start_addr, values)
+                _logger.info(f"Wrote HR[{start_addr}..{start_addr + len(values)-1}] = {values}")
+            except Exception as err:
+                _logger.error(f"Failed to write HR[{start_addr}..]: {err}")
+
+        if self.loop and self.loop.is_running():
+            # Schedule on the event loop thread
+            self.loop.call_soon_threadsafe(_do_write)
+        else:
+            _logger.warning("Cannot write: Modbus server loop is not running")
+
     def run(self):
         """
-        This is called when .start() is invoked on the thread.
-        We create a fresh asyncio loop, set up context/identity, start the TCP server,
-        and then call loop.run_forever().
+        Called when .start() is invoked. Creates an asyncio loop,
+        schedules the Modbus TCP server and the poller as tasks, then run_forever.
         """
-        # 1) Create a brand‐new event loop for this thread
+        # 1) Create a fresh asyncio event loop for this QThread.
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
@@ -78,22 +147,23 @@ class ModbusServerThread(QThread):
         # 3) Build device identity
         identity = self.setup_identity()
 
-        # 4) Start the async TCP server; once that completes, loop.run_forever() will keep it alive.
-        coro = StartAsyncTcpServer(
+        # 4) Schedule the StartAsyncTcpServer coroutine as a task
+        server_coro = StartAsyncTcpServer(
             context=self.context,
             identity=identity,
             address=(self.host, self.port),
         )
-        # run_until_complete ensures StartAsyncTcpServer binds/listens before we go into run_forever()
-        self.loop.run_until_complete(coro)
+        self.loop.create_task(server_coro)
 
-        # 5) Hand control over to the loop so the server can serve requests
+        # 5) Schedule the polling coroutine
+        self.loop.create_task(self._poll_holding_registers())
+
+        # 6) Run the event loop until stop() is called
         self.loop.run_forever()
 
     def stop(self):
         """
         Call this from the GUI thread to stop the server cleanly.
-        It schedules loop.stop() on the event loop, which tears down the TCP listener.
         """
         if self.loop and self.loop.is_running():
             self.loop.call_soon_threadsafe(self.loop.stop)

@@ -26,6 +26,6 @@ def initialize_camera(camNum): #Init 4k cam
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3072)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2048)
 
-    cap.set(cv2.CAP_PROP_FPS, 5) # Set the desired FPS
+    cap.set(cv2.CAP_PROP_FPS, 10) # Set the desired FPS
 
     return cap

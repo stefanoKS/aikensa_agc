@@ -29,4 +29,4 @@ def show_camera_stream(camera_index=0):
 
 if __name__ == "__main__":
     # Show the camera stream for camera index 0
-    show_camera_stream(1)
+    show_camera_stream(0)

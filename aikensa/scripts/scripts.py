@@ -1,6 +1,8 @@
 import yaml
+import random
+from typing import List, Dict
 
-def list_to_16bit_int(bit_list):
+def list_to_16bit_int(bit_list: List[int]) -> int:
     if len(bit_list) > 16:
         raise ValueError("Input list must be 16 bits or fewer")
     
@@ -11,7 +13,7 @@ def list_to_16bit_int(bit_list):
     bit_str = ''.join(str(b) for b in full_bits)
     return int(bit_str, 2)
 
-def load_register_map(yaml_path):
+def load_register_map(yaml_path: str) -> Dict[str, int]:
     with open(yaml_path, 'r') as f:
         data = yaml.safe_load(f)
     # Invert the mapping: {label: address}
@@ -24,15 +26,12 @@ def invert_16bit_int(value: int) -> int:
     """
     if not 0 <= value <= 0xFFFF:
         raise ValueError("Input must be a 16-bit unsigned integer (0 to 65535)")
-
-    # XOR with 0xFFFF to flip all 16 bits
     return value ^ 0xFFFF
 
-def random_list(length: int) -> list[int]:
+def random_list(length: int) -> List[int]:
     """
     Generates a random list of 0s and 1s of specified length.
     """
-    import random
     if length < 0:
         raise ValueError("Length must be a non-negative integer")
     return [random.randint(0, 1) for _ in range(length)]

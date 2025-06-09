@@ -22,7 +22,7 @@ from aikensa.thread.modbus_thread import ModbusServerThread
 # List of UI files to be loaded
 UI_FILES = [
     'aikensa/qtui/mainPage.ui',             # index 0
-    'aikensa/qtui/calibration_cam.ui', # index 1
+    'aikensa/qtui/empty.ui', # index 1
     'aikensa/qtui/empty.ui', # index 2
     'aikensa/qtui/empty.ui', # index 3
     'aikensa/qtui/empty.ui', # index 4
@@ -78,6 +78,15 @@ class AIKensa(QMainWindow):
         self.inspection_thread.partNumber_signal.connect(self._set_partNumberUI)
 
         self.inspection_thread.part1Cam.connect(self._setPartFrame1)
+        self.inspection_thread.part2Cam.connect(self._setPartFrame2)
+        self.inspection_thread.part3Cam.connect(self._setPartFrame3)
+        self.inspection_thread.part4Cam.connect(self._setPartFrame4)
+        self.inspection_thread.part5Cam.connect(self._setPartFrame5)
+        self.inspection_thread.part6Cam.connect(self._setPartFrame6)
+        self.inspection_thread.part7Cam.connect(self._setPartFrame7)
+        self.inspection_thread.part8Cam.connect(self._setPartFrame8)
+        self.inspection_thread.part9Cam.connect(self._setPartFrame9)
+        self.inspection_thread.part10Cam.connect(self._setPartFrame10)
 
         self.inspection_thread.current_numofPart_signal.connect(self._update_OKNG_label)
         self.inspection_thread.today_numofPart_signal.connect(self._update_todayOKNG_label)
@@ -191,6 +200,60 @@ class AIKensa(QMainWindow):
             label1 = widget.findChild(QLabel, "FramePart1")
             label1.setPixmap(QPixmap.fromImage(image))
 
+    def _setPartFrame2(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label2 = widget.findChild(QLabel, "FramePart2")
+            label2.setPixmap(QPixmap.fromImage(image))
+    
+    def _setPartFrame3(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label3 = widget.findChild(QLabel, "FramePart3")
+            label3.setPixmap(QPixmap.fromImage(image))
+
+    def _setPartFrame4(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label4 = widget.findChild(QLabel, "FramePart4")
+            label4.setPixmap(QPixmap.fromImage(image))
+    
+    def _setPartFrame5(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label5 = widget.findChild(QLabel, "FramePart5")
+            label5.setPixmap(QPixmap.fromImage(image))
+
+    def _setPartFrame6(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label6 = widget.findChild(QLabel, "FramePart6")
+            label6.setPixmap(QPixmap.fromImage(image))
+
+    def _setPartFrame7(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label7 = widget.findChild(QLabel, "FramePart7")
+            label7.setPixmap(QPixmap.fromImage(image))
+
+    def _setPartFrame8(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label8 = widget.findChild(QLabel, "FramePart8")
+            label8.setPixmap(QPixmap.fromImage(image))
+
+    def _setPartFrame9(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label9 = widget.findChild(QLabel, "FramePart9")
+            label9.setPixmap(QPixmap.fromImage(image))
+
+    def _setPartFrame10(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label10 = widget.findChild(QLabel, "FramePart10")
+            label10.setPixmap(QPixmap.fromImage(image))
+
     def _update_OKNG_label(self, numofPart):
         for widget_key, part_name in self.widget_dir_map.items():
             # Get OK and NG values using widget_key as index
@@ -224,6 +287,7 @@ class AIKensa(QMainWindow):
                 print(f"Widget key {widget_key} is out of bounds for todaynumofPart")
 
     def _inspectionStatusText(self, inspectionStatus):
+
         label_names = ["StatusP1", "StatusP2", "StatusP3", "StatusP4", "StatusP5", "StatusP6", "StatusP7", "StatusP8", "StatusP9", "StatusP10"]
         for i, status in enumerate(inspectionStatus):
             widget = self.stackedWidget.widget(5)

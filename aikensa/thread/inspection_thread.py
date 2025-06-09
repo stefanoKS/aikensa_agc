@@ -10,8 +10,6 @@ import logging
 import sqlite3
 import mysql.connector
 
-from sahi import AutoDetectionModel
-from sahi.predict import get_prediction, get_sliced_prediction, predict
 
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer, pyqtSlot
 from PyQt5.QtGui import QImage, QPixmap
@@ -28,7 +26,7 @@ from ultralytics import YOLO
 from PIL import ImageFont, ImageDraw, Image
 
 from aikensa.scripts.scripts import list_to_16bit_int, load_register_map, invert_16bit_int, random_list
-from aikensa.parts_config.
+# from aikensa.parts_config.
 
 
 
@@ -66,6 +64,16 @@ class InspectionConfig:
 
 class InspectionThread(QThread):
     part1Cam = pyqtSignal(QImage)
+    part2Cam = pyqtSignal(QImage)
+    part3Cam = pyqtSignal(QImage)
+    part4Cam = pyqtSignal(QImage)
+    part5Cam = pyqtSignal(QImage)
+    part6Cam = pyqtSignal(QImage)
+    part7Cam = pyqtSignal(QImage)
+    part8Cam = pyqtSignal(QImage)
+    part9Cam = pyqtSignal(QImage)
+    part10Cam = pyqtSignal(QImage)
+
 
     P668307UA0A_InspectionStatus = pyqtSignal(list)
 
@@ -122,8 +130,6 @@ class InspectionThread(QThread):
         self.planarizeTransform_temp = None
         self.planarizeTransform_temp_scaled = None
         
-        self.dailyTenken_cropWidth_scaled = int(self.dailyTenken_cropWidth//self.scale_factor)
-
         self.part1Crop_Pos = (315, 510)
         self.part2Crop_Pos = (315, 740)
         self.part3Crop_Pos = (315, 970)
@@ -167,7 +173,7 @@ class InspectionThread(QThread):
 
         self.InspectionResult_NGReason = [None]*5
         
-        self.InspectionStatus = [None]*5
+        self.InspectionStatus = [None]*10
 
         self.widget_dir_map = {
             5: "P668307UA0A_COWL_TOP",
@@ -355,7 +361,7 @@ class InspectionThread(QThread):
                             PPMS = "COUNTERRESET")  
 
 
-                if self.cap_cam.isOpened():
+                if self.cap_cam is not None:
                     _, self.camFrame = self.cap_cam.read()
                 else:
                     print("Camera 0 is not opened, creating placeholder image.")
@@ -486,7 +492,7 @@ class InspectionThread(QThread):
 
                         print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID_int}")
                         print(f"Inspection Result Set ID: {self.InspectionResult_SetID_OK_int}")
-                        print(f"Inspection Result Bousei ID: {self.InspectionResult_BouseiD_OK_int}")
+                        print(f"Inspection Result Bousei ID: {self.InspectionResult_BouseiID_OK_int}")
                         
                         # Send all zeros to the holding registers
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
@@ -495,10 +501,14 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
                         print("All zeros Emitted to Holding Registers")
+
+                        # Set the inspection status to 待機
+                        self.InspectionStatus = ["待機"] * 10
+                        
                         #wait
                         time.sleep(0.5)
 

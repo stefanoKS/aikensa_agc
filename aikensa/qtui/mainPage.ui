@@ -23,7 +23,7 @@
    <property name="enabled">
     <bool>true</bool>
    </property>
-   <widget class="QPushButton" name="P668307UA0A_Button">
+   <widget class="QPushButton" name="P668307UA0A_button">
     <property name="geometry">
      <rect>
       <x>80</x>
@@ -246,7 +246,7 @@ SEAL ASSY-COWL TOP</string>
      <set>Qt::AlignBottom|Qt::AlignHCenter</set>
     </property>
    </widget>
-   <zorder>P668307UA0A_Button</zorder>
+   <zorder>P668307UA0A_button</zorder>
    <zorder>label_1</zorder>
    <zorder>quitbutton</zorder>
    <zorder>line_5</zorder>

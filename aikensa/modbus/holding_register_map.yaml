@@ -68,8 +68,8 @@
 135: return_AIKENSA_KensaResults_set_results_OK
 136: return_AIKENSA_KensaResults_set_results_NG
 
-154: return_AIKENSA_KensaResults_tapeinspection_partexist
-155: return_AIKENSA_KensaResults_tapeinspection_results_OK
-156: return_AIKENSA_KensaResults_tapeinspection_results_NG
+154: return_AIKENSA_KensaResults_bouseiinspection_partexist
+155: return_AIKENSA_KensaResults_bouseiinspection_results_OK
+156: return_AIKENSA_KensaResults_bouseiinspection_results_NG
 
 164: return_state_code

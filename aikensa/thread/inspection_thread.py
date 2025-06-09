@@ -28,6 +28,9 @@ from ultralytics import YOLO
 from PIL import ImageFont, ImageDraw, Image
 
 from aikensa.scripts.scripts import list_to_16bit_int, load_register_map, invert_16bit_int, random_list
+from aikensa.parts_config.
+
+
 
 @dataclass
 class InspectionConfig:
@@ -61,16 +64,10 @@ class InspectionConfig:
     today_numofPart: list = field(default_factory=lambda: [[0, 0] for _ in range(30)])
     current_numofPart: list = field(default_factory=lambda: [[0, 0] for _ in range(30)])
 
-
-
 class InspectionThread(QThread):
     part1Cam = pyqtSignal(QImage)
-    part2Cam = pyqtSignal(QImage)
-    part3Cam = pyqtSignal(QImage)
-    part4Cam = pyqtSignal(QImage)
-    part5Cam = pyqtSignal(QImage)
 
-    AGC_InspectionStatus = pyqtSignal(list)
+    P668307UA0A_InspectionStatus = pyqtSignal(list)
 
     holding_register_signal = pyqtSignal(list)
 
@@ -96,7 +93,6 @@ class InspectionThread(QThread):
             self.modbus_thread.holdingUpdated.connect(self.on_holding_update)
             self.requestModbusWrite.connect(self.modbus_thread.write_holding_registers)
 
-
         self.kanjiFontPath = "aikensa/font/NotoSansJP-ExtraBold.ttf"
 
         self.multiCam_stream = False
@@ -105,42 +101,20 @@ class InspectionThread(QThread):
         self.cap_cam0 = None
         self.camFrame = None
 
-        self.homography_template = None
-        self.homography_matrix1 = None
-
-        self.homography_template_scaled = None
-        self.homography_matrix1_scaled = None
-
-        self.H1 = None
-
-        self.H1_scaled = None
-
         self.part1Crop = None
         self.part2Crop = None
         self.part3Crop = None
         self.part4Crop = None
         self.part5Crop = None
-        
-        self.part1Crop_scaled = None
-        self.part2Crop_scaled = None
-        self.part3Crop_scaled = None
-        self.part4Crop_scaled = None
-        self.part5Crop_scaled = None
+        self.part6Crop = None
+        self.part7Crop = None
+        self.part8Crop = None
+        self.part9Crop = None
+        self.part10Crop = None
 
-        self.homography_size = None
-        self.homography_size_scaled = None
-        self.homography_blank_canvas = None
-        self.homography_blank_canvas_scaled = None
-
-        self.combinedImage = None
-        self.combinedImage_scaled = None
-
-        self.scale_factor = 5.0 #Scale Factor, might increase this later
-        self.scale_factor_hole = 2.0
-        self.frame_width = 3072
+        self.frame_width = 2048
         self.frame_height = 2048
-        self.scaled_width = None
-        self.scaled_height = None
+
 
         self.planarizeTransform = None
         self.planarizeTransform_scaled = None
@@ -148,38 +122,23 @@ class InspectionThread(QThread):
         self.planarizeTransform_temp = None
         self.planarizeTransform_temp_scaled = None
         
-        self.scaled_height  = int(self.frame_height / self.scale_factor)
-        self.scaled_width = int(self.frame_width / self.scale_factor)
-
-        self.part_height_offset = 205
-        self.part_height_offset_scaled = int(self.part_height_offset//self.scale_factor)
-
-        self.part_height_offset_hoodFR = 140
-        self.part_height_offset_hoodFR_scaled = int(self.part_height_offset_hoodFR//self.scale_factor)
-
-        self.part_height_offset_nissanhoodFR = 180
-        self.part_height_offset_nissanhoodFR_scaled = int(self.part_height_offset_nissanhoodFR//self.scale_factor)
-
-        self.dailyTenken_cropWidth = 950
         self.dailyTenken_cropWidth_scaled = int(self.dailyTenken_cropWidth//self.scale_factor)
 
-        self.qtWindowWidth = 1701
-        self.qtWindowHeight = 109
+        self.part1Crop_Pos = (315, 510)
+        self.part2Crop_Pos = (315, 740)
+        self.part3Crop_Pos = (315, 970)
+        self.part4Crop_Pos = (315, 1200)
+        self.part5Crop_Pos = (315, 1430)
+        self.part6Crop_Pos = (1565, 510)
+        self.part7Crop_Pos = (1565, 740)
+        self.part8Crop_Pos = (1565, 970)
+        self.part9Crop_Pos = (1565, 1200)
+        self.part10Crop_Pos = (1565, 1430)
 
-        self.part1Crop_YPos = 175
-        self.part2Crop_YPos = 480
-        self.part3Crop_YPos = 800
-        self.part4Crop_YPos = 1120
-        self.part5Crop_YPos = 1440
+        self.partCrop_width_height = (150, 150)
 
-        self.part1Crop_YPos_scaled = int(self.part1Crop_YPos//self.scale_factor)
-        self.part2Crop_YPos_scaled = int(self.part2Crop_YPos//self.scale_factor)
-        self.part3Crop_YPos_scaled = int(self.part3Crop_YPos//self.scale_factor)
-        self.part4Crop_YPos_scaled = int(self.part4Crop_YPos//self.scale_factor)
-        self.part5Crop_YPos_scaled = int(self.part5Crop_YPos//self.scale_factor)
-
-        self.height_hole_offset = int(120//self.scale_factor_hole)
-        self.width_hole_offset = int(370//self.scale_factor_hole)
+        self.qtWindowWidth = 110
+        self.qtWindowHeight = 110
 
         self.timerStart = None
         self.timerFinish = None
@@ -200,20 +159,19 @@ class InspectionThread(QThread):
         self.InspectionResult_SetID_NG = [None]*5
         self.InspectionResult_SetID_NG_int = [None]*5
 
-        self.InspectionResult_TapeID_OK = [None]*5
-        self.InspectionResult_TapeID_OK_int = [None]*5
+        self.InspectionResult_BouseiID_OK = [None]*5
+        self.InspectionResult_BouseiID_OK_int = [None]*5
 
-        self.InspectionResult_TapeID_NG = [None]*5
-        self.InspectionResult_TapeID_NG_int = [None]*5
+        self.InspectionResult_BouseiID_NG = [None]*5
+        self.InspectionResult_BouseiID_NG_int = [None]*5
 
         self.InspectionResult_NGReason = [None]*5
         
         self.InspectionStatus = [None]*5
 
         self.widget_dir_map = {
-            5: "AGC_Line"
+            5: "P668307UA0A_COWL_TOP",
         }
-
         self.InspectionWaitTime = 5.0
         self.InspectionTimeStart = None
 
@@ -396,22 +354,36 @@ class InspectionThread(QThread):
                             NGreason = "COUNTERRESET",
                             PPMS = "COUNTERRESET")  
 
-                #initialize single camera with id 0
 
-                if self.cap_cam is None:
-                    print("Camera 0 is not initialized, skipping frame capture.")
-                    continue
-                # Read the frame from the camera
-                _, self.camFrame = self.cap_cam.read()
+                if self.cap_cam.isOpened():
+                    _, self.camFrame = self.cap_cam.read()
+                else:
+                    print("Camera 0 is not opened, creating placeholder image.")
+                    self.camFrame = np.zeros((self.frame_height, self.frame_width, 3), dtype=np.uint8)
+                    self.camFrame[:] = (0, 255, 0)
 
-                self.camFrame = cv2.rotate(self.camFrame, cv2.ROTATE_180)
-
-                self.part1Crop = self.camFrame[int(self.part1Crop_YPos) : int((self.part1Crop_YPos + self.part_height_offset)), 0 : int(self.camFrame.shape[1])]
-                self.part2Crop = self.camFrame[int(self.part2Crop_YPos) : int((self.part2Crop_YPos + self.part_height_offset)), 0 : int(self.camFrame.shape[1])]
-                self.part3Crop = self.camFrame[int(self.part3Crop_YPos) : int((self.part3Crop_YPos + self.part_height_offset)), 0 : int(self.camFrame.shape[1])]
-                self.part4Crop = self.camFrame[int(self.part4Crop_YPos) : int((self.part4Crop_YPos + self.part_height_offset)), 0 : int(self.camFrame.shape[1])]
-                self.part5Crop = self.camFrame[int(self.part5Crop_YPos) : int((self.part5Crop_YPos + self.part_height_offset)), 0 : int(self.camFrame.shape[1])]
-
+                self.part1Crop = self.camFrame[self.part1Crop_Pos[1]:self.part1Crop_Pos[1]+self.partCrop_width_height[1], 
+                                                self.part1Crop_Pos[0]:self.part1Crop_Pos[0]+self.partCrop_width_height[0]]
+                self.part2Crop = self.camFrame[self.part2Crop_Pos[1]:self.part2Crop_Pos[1]+self.partCrop_width_height[1],
+                                                self.part2Crop_Pos[0]:self.part2Crop_Pos[0]+self.partCrop_width_height[0]]
+                self.part3Crop = self.camFrame[self.part3Crop_Pos[1]:self.part3Crop_Pos[1]+self.partCrop_width_height[1],
+                                                self.part3Crop_Pos[0]:self.part3Crop_Pos[0]+self.partCrop_width_height[0]]
+                self.part4Crop = self.camFrame[self.part4Crop_Pos[1]:self.part4Crop_Pos[1]+self.partCrop_width_height[1],
+                                                self.part4Crop_Pos[0]:self.part4Crop_Pos[0]+self.partCrop_width_height[0]]
+                self.part5Crop = self.camFrame[self.part5Crop_Pos[1]:self.part5Crop_Pos[1]+self.partCrop_width_height[1],
+                                                self.part5Crop_Pos[0]:self.part5Crop_Pos[0]+self.partCrop_width_height[0]]
+                self.part6Crop = self.camFrame[self.part6Crop_Pos[1]:self.part6Crop_Pos[1]+self.partCrop_width_height[1],
+                                                self.part6Crop_Pos[0]:self.part6Crop_Pos[0]+self.partCrop_width_height[0]]
+                self.part7Crop = self.camFrame[self.part7Crop_Pos[1]:self.part7Crop_Pos[1]+self.partCrop_width_height[1],
+                                                self.part7Crop_Pos[0]:self.part7Crop_Pos[0]+self.partCrop_width_height[0]]
+                self.part8Crop = self.camFrame[self.part8Crop_Pos[1]:self.part8Crop_Pos[1]+self.partCrop_width_height[1],
+                                                self.part8Crop_Pos[0]:self.part8Crop_Pos[0]+self.partCrop_width_height[0]]
+                self.part9Crop = self.camFrame[self.part9Crop_Pos[1]:self.part9Crop_Pos[1]+self.partCrop_width_height[1],
+                                                self.part9Crop_Pos[0]:self.part9Crop_Pos[0]+self.partCrop_width_height[0]]
+                self.part10Crop = self.camFrame[self.part10Crop_Pos[1]:self.part10Crop_Pos[1]+self.partCrop_width_height[1],
+                                                self.part10Crop_Pos[0]:self.part10Crop_Pos[0]+self.partCrop_width_height[0]]
+         
+                #print the part number
                 if self.part1Crop is not None:
                     self.part1Crop = self.downSampling(self.part1Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
                     self.part1Cam.emit(self.convertQImage(self.part1Crop))
@@ -427,6 +399,21 @@ class InspectionThread(QThread):
                 if self.part5Crop is not None:
                     self.part5Crop = self.downSampling(self.part5Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
                     self.part5Cam.emit(self.convertQImage(self.part5Crop))
+                if self.part6Crop is not None:
+                    self.part6Crop = self.downSampling(self.part6Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
+                    self.part6Cam.emit(self.convertQImage(self.part6Crop))
+                if self.part7Crop is not None:
+                    self.part7Crop = self.downSampling(self.part7Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
+                    self.part7Cam.emit(self.convertQImage(self.part7Crop))
+                if self.part8Crop is not None:
+                    self.part8Crop = self.downSampling(self.part8Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
+                    self.part8Cam.emit(self.convertQImage(self.part8Crop))
+                if self.part9Crop is not None:
+                    self.part9Crop = self.downSampling(self.part9Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
+                    self.part9Cam.emit(self.convertQImage(self.part9Crop))
+                if self.part10Crop is not None:
+                    self.part10Crop = self.downSampling(self.part10Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
+                    self.part10Cam.emit(self.convertQImage(self.part10Crop))
 
                     if self.firstTimeInspection is False:
                         if self.inspection_config.doInspection is False:
@@ -442,6 +429,13 @@ class InspectionThread(QThread):
                     self.InspectionImages[2] = self.part3Crop
                     self.InspectionImages[3] = self.part4Crop
                     self.InspectionImages[4] = self.part5Crop
+                    self.InspectionImages[5] = self.part6Crop
+                    self.InspectionImages[6] = self.part7Crop
+                    self.InspectionImages[7] = self.part8Crop
+                    self.InspectionImages[8] = self.part9Crop
+                    self.InspectionImages[9] = self.part10Crop
+                    # Do Inference
+
 
                 if self.inspection_config.doInspection is True:
                     self.inspection_config.doInspection = False
@@ -456,6 +450,12 @@ class InspectionThread(QThread):
                     self.InspectionImages[2] = self.part3Crop
                     self.InspectionImages[3] = self.part4Crop
                     self.InspectionImages[4] = self.part5Crop
+                    self.InspectionImages[5] = self.part6Crop
+                    self.InspectionImages[6] = self.part7Crop
+                    self.InspectionImages[7] = self.part8Crop
+                    self.InspectionImages[8] = self.part9Crop
+                    self.InspectionImages[9] = self.part10Crop
+                    
 
                     for i, img in enumerate(self.InspectionImages):
                         if img is not None:
@@ -464,31 +464,29 @@ class InspectionThread(QThread):
                             print(f"Saved {filename}")
 
 
-
-
                 if self.InstructionCode == 0:
                     if self.InstructionCode_prev == 0:
                         pass  # Skip, already processed
                     else:
                         self.InstructionCode_prev = self.InstructionCode
 
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
+                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-                        self.InspectionResult_SetID_OK = [0, 0, 0, 0, 0]
-                        self.InspectionResult_SetID_NG = [0, 0, 0, 0, 0]
+                        self.InspectionResult_SetID_OK = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                        self.InspectionResult_SetID_NG = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-                        self.InspectionResult_TapeID_OK = [0, 0, 0, 0, 0]
-                        self.InspectionResult_TapeID_NG = [0, 0, 0, 0, 0]
+                        self.InspectionResult_BouseiID_OK = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                        self.InspectionResult_BouseiID_NG = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
                         self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
                         self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
+                        self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
+                        self.InspectionResult_BouseiID_NG_int = list_to_16bit_int(self.InspectionResult_BouseiID_NG)
 
                         print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID_int}")
                         print(f"Inspection Result Set ID: {self.InspectionResult_SetID_OK_int}")
-                        print(f"Inspection Result Tape ID: {self.InspectionResult_TapeID_OK_int}")
+                        print(f"Inspection Result Bousei ID: {self.InspectionResult_BouseiD_OK_int}")
                         
                         # Send all zeros to the holding registers
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
@@ -496,13 +494,16 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
                         print("All zeros Emitted to Holding Registers")
                         #wait
                         time.sleep(0.5)
+
+
+                # Instruction 1 is PLC request to start the set inspection
 
                 if self.InstructionCode == 1:
                     if self.InstructionCode_prev == 1:
@@ -510,7 +511,7 @@ class InspectionThread(QThread):
                     else:
                         self.InstructionCode_prev = self.InstructionCode
 
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
+                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
                         self.InspectionResult_SetID_OK = random_list(5) #Dummy values for testing
                         self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]  # Invert the OK values for NG
                         
@@ -535,29 +536,31 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
                         print("0 State Code Emitted, ready for next instruction")
 
+                # Instruction 2 is PLC request to start the rush(bousei shori) inspection
+
                 if self.InstructionCode == 2:
                     if self.InstructionCode_prev == 2:
                         pass
                     else:
                         self.InstructionCode_prev = self.InstructionCode
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-                        self.InspectionResult_TapeID_OK = random_list(5) #Dummy values for testing
-                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
+                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                        self.InspectionResult_BouseiID_OK = random_list(5) #Dummy values for testing
+                        self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]
 
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
+                        self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
+                        self.InspectionResult_BouseiID_NG_int = list_to_16bit_int(self.InspectionResult_BouseiID_NG)
 
                         print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
+                        print(f"Inspection Result Bousei OK ID: {self.InspectionResult_BouseiID_OK}")
+                        print(f"Inspection Result Bousei NG ID: {self.InspectionResult_BouseiID_NG}")
 
                         #Emit the inspection result and serial number to holding registers
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
                         print("Inspection Result Tape ID Emitted")
                         # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
@@ -565,9 +568,6 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
                         print("0 State Code Emitted, ready for next instruction")
                         
-
-
-
 
                 # if self.inspection_config.doInspection is True:
                 #     self.inspection_config.doInspection = False
@@ -638,18 +638,12 @@ class InspectionThread(QThread):
 
                 #             # self.hoodFR_InspectionStatus.emit(self.InspectionStatus)
 
-                #emit the ethernet 
                 self.today_numofPart_signal.emit(self.inspection_config.today_numofPart)
                 self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
             
-                # Emit status based on the red tenmetsu status
+                self.P668307UA0A_InspectionStatus.emit(self.InspectionStatus)
 
-                
-                self.AGC_InspectionStatus.emit(self.InspectionStatus)
-
-                # Emit the hole detection
-
-        self.msleep(1)
+        self.msleep(5)
 
 
     def setCounterFalse(self):
@@ -718,7 +712,6 @@ class InspectionThread(QThread):
 
         return [ok_count_current, ng_count_current], [ok_count_total, ng_count_total]
     
-    
     def save_result_database(self, partname, numofPart, 
                              currentnumofPart, deltaTime, 
                              kensainName, 
@@ -759,7 +752,6 @@ class InspectionThread(QThread):
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, detected_pitch_str, delta_pitch_str, total_length, resultPitch, status, NGreason))
         self.mysql_conn.commit()
-
 
     def get_last_entry_currentnumofPart(self, part_name):
         self.cursor.execute('''
@@ -810,7 +802,6 @@ class InspectionThread(QThread):
         else:
             return [0, 0]
             
-
     def draw_status_text_PIL(self, image, text, color, size = "normal", x_offset = 0, y_offset = 0):
 
         center_x = image.shape[1] // 2
@@ -899,84 +890,33 @@ class InspectionThread(QThread):
         return camera_matrix, distortion_coeff
 
     def initialize_model(self):
-        AGCJ30LH_partDetectionModel = None
-        AGCJ30LH_setDetectionModel = None
-        AGCJ30RH_partDetectionModel = None
-        AGCJ30RH_setDetectionModel = None
 
-        AGCJ59JLH_partDetectionModel = None
-        AGCJ59JLH_setDetectionModel = None
-        AGCJ59JRH_partDetectionModel = None
-        AGCJ59JRH_setDetectionModel = None
-
-        path_AGCJ30LH_partDetectionModel = "./aikensa/models/AGCJ30LH_PART.pt"
-        path_AGCJ30LH_setDetectionModel = "./aikensa/models/AGCJ30LH_SET.pt"
-        path_AGCJ30RH_partDetectionModel = "./aikensa/models/AGCJ30RH_PART.pt"
-        path_AGCJ30RH_setDetectionModel = "./aikensa/models/AGCJ30RH_SET.pt"
-
-        path_AGCJ59JLH_partDetectionModel = "./aikensa/models/AGCJ59JLH_PART.pt"
-        path_AGCJ59JLH_setDetectionModel = "./aikensa/models/AGCJ59JLH_SET.pt"
-        path_AGCJ59JRH_partDetectionModel = "./aikensa/models/AGCJ59JRH_PART.pt"
-        path_AGCJ59JRH_setDetectionModel = "./aikensa/models/AGCJ59JRH_SET.pt"
+        P668307UA0A_partDetectionModel_path = "./aikensa/models/P668307UA0A_partDetectionModel.pt"
+        P668307UA0A_setSegmentationModel_path = "./aikensa/models/P668307UA0A_setSegmentationModel.pt"
+        P668307UA0A_bouseiSegmentationModel_path = "./aikensa/models/P668307UA0A_bouseiSegmentationModel.pt"
 
         # Initialize models as None if file does not exist, otherwise load the model
-        if os.path.exists(path_AGCJ30LH_partDetectionModel):
-            AGCJ30LH_partDetectionModel = YOLO(path_AGCJ30LH_partDetectionModel)
+        if os.path.exists(P668307UA0A_partDetectionModel_path):
+            P668307UA0A_partDetectionModel = YOLO(P668307UA0A_partDetectionModel_path)
         else:
-            print(f"Model file {path_AGCJ30LH_partDetectionModel} does not exist. Initializing as None.")
-            AGCJ30LH_partDetectionModel = None
+            print(f"Model file {P668307UA0A_partDetectionModel_path} does not exist. Initializing as None.")
+            P668307UA0A_partDetectionModel = None
 
-        if os.path.exists(path_AGCJ30LH_setDetectionModel):
-            AGCJ30LH_setDetectionModel = YOLO(path_AGCJ30LH_setDetectionModel)
+        if os.path.exists(P668307UA0A_setSegmentationModel_path):
+            P668307UA0A_setSegmentationModel = YOLO(P668307UA0A_setSegmentationModel_path)
         else:
-            print(f"Model file {path_AGCJ30LH_setDetectionModel} does not exist. Initializing as None.")
-            AGCJ30LH_setDetectionModel = None
+            print(f"Model file {P668307UA0A_setSegmentationModel_path} does not exist. Initializing as None.")
+            P668307UA0A_setSegmentationModel = None
 
-        if os.path.exists(path_AGCJ30RH_partDetectionModel):
-            AGCJ30RH_partDetectionModel = YOLO(path_AGCJ30RH_partDetectionModel)
+        if os.path.exists(P668307UA0A_bouseiSegmentationModel_path):
+            P668307UA0A_bouseiSegmentationModel = YOLO(P668307UA0A_bouseiSegmentationModel_path)
         else:
-            print(f"Model file {path_AGCJ30RH_partDetectionModel} does not exist. Initializing as None.")
-            AGCJ30RH_partDetectionModel = None
+            print(f"Model file {P668307UA0A_bouseiSegmentationModel_path} does not exist. Initializing as None.")
+            P668307UA0A_bouseiSegmentationModel = None
 
-        if os.path.exists(path_AGCJ30RH_setDetectionModel):
-            AGCJ30RH_setDetectionModel = YOLO(path_AGCJ30RH_setDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ30RH_setDetectionModel} does not exist. Initializing as None.")
-            AGCJ30RH_setDetectionModel = None
-
-        if os.path.exists(path_AGCJ59JLH_partDetectionModel):
-            AGCJ59JLH_partDetectionModel = YOLO(path_AGCJ59JLH_partDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ59JLH_partDetectionModel} does not exist. Initializing as None.")
-            AGCJ59JLH_partDetectionModel = None
-
-        if os.path.exists(path_AGCJ59JLH_setDetectionModel):
-            AGCJ59JLH_setDetectionModel = YOLO(path_AGCJ59JLH_setDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ59JLH_setDetectionModel} does not exist. Initializing as None.")
-            AGCJ59JLH_setDetectionModel = None
-
-        if os.path.exists(path_AGCJ59JRH_partDetectionModel):
-            AGCJ59JRH_partDetectionModel = YOLO(path_AGCJ59JRH_partDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ59JRH_partDetectionModel} does not exist. Initializing as None.")
-            AGCJ59JRH_partDetectionModel = None
-
-        if os.path.exists(path_AGCJ59JRH_setDetectionModel):
-            AGCJ59JRH_setDetectionModel = YOLO(path_AGCJ59JRH_setDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ59JRH_setDetectionModel} does not exist. Initializing as None.")
-            AGCJ59JRH_setDetectionModel = None
-
-        self.AGCJ30LH_partDetectionModel = AGCJ30LH_partDetectionModel
-        self.AGCJ30LH_setDetectionModel = AGCJ30LH_setDetectionModel
-        self.AGCJ30RH_partDetectionModel = AGCJ30RH_partDetectionModel
-        self.AGCJ30RH_setDetectionModel = AGCJ30RH_setDetectionModel
-
-        self.AGCJ59JLH_partDetectionModel = AGCJ59JLH_partDetectionModel
-        self.AGCJ59JLH_setDetectionModel = AGCJ59JLH_setDetectionModel
-        self.AGCJ59JRH_partDetectionModel = AGCJ59JRH_partDetectionModel
-        self.AGCJ59JRH_setDetectionModel = AGCJ59JRH_setDetectionModel
+        self.P668307UA0A_partDetectionModel = P668307UA0A_partDetectionModel
+        self.P668307UA0A_setSegmentationModel = P668307UA0A_setSegmentationModel
+        self.P668307UA0A_bouseiSegmentationModel = P668307UA0A_bouseiSegmentationModel
 
     def stop(self):
         self.running = False

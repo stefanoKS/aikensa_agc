@@ -915,7 +915,6 @@ class InspectionThread(QThread):
     def stop(self):
         self.running = False
         print("Releasing all cameras.")
-        self.release_camera()
         self.running = False
         print("Inspection thread stopped.")
 

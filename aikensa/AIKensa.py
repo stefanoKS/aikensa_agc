@@ -36,8 +36,8 @@ class AIKensa(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
 
-        server_ip_address = "192.168.3.11"  # Replace with actual PC IP or "0.0.0.0"
-        server_port = 502
+        server_ip_address = "192.168.1.129"  # Replace with actual PC IP or "0.0.0.0"
+        server_port = 1502
 
         self.modbusThread = ModbusServerThread(host=server_ip_address, port=server_port)
         self.inspection_thread = InspectionThread(InspectionConfig(),  modbus_thread=self.modbusThread)  

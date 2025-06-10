@@ -26,9 +26,6 @@ from ultralytics import YOLO
 from PIL import ImageFont, ImageDraw, Image
 
 from aikensa.scripts.scripts import list_to_16bit_int, load_register_map, invert_16bit_int, random_list
-# from aikensa.parts_config.
-
-
 
 @dataclass
 class InspectionConfig:
@@ -89,7 +86,8 @@ class InspectionThread(QThread):
     def __init__(self, inspection_config: InspectionConfig = None, modbus_thread=None):
         super(InspectionThread, self).__init__()
         self.running = True
-
+        self.latest_frame = None
+        
         if inspection_config is None:
             self.inspection_config = InspectionConfig()    
         else:
@@ -130,16 +128,16 @@ class InspectionThread(QThread):
         self.planarizeTransform_temp = None
         self.planarizeTransform_temp_scaled = None
         
-        self.part1Crop_Pos = (315, 510)
-        self.part2Crop_Pos = (315, 740)
-        self.part3Crop_Pos = (315, 970)
-        self.part4Crop_Pos = (315, 1200)
-        self.part5Crop_Pos = (315, 1430)
-        self.part6Crop_Pos = (1565, 510)
+        self.part1Crop_Pos = (320, 515)
+        self.part2Crop_Pos = (320, 740)
+        self.part3Crop_Pos = (320, 960)
+        self.part4Crop_Pos = (320, 1173)
+        self.part5Crop_Pos = (320, 1395)
+        self.part6Crop_Pos = (1565, 515)
         self.part7Crop_Pos = (1565, 740)
-        self.part8Crop_Pos = (1565, 970)
-        self.part9Crop_Pos = (1565, 1200)
-        self.part10Crop_Pos = (1565, 1430)
+        self.part8Crop_Pos = (1565, 960)
+        self.part9Crop_Pos = (1565, 1173)
+        self.part10Crop_Pos = (1565, 1395)
 
         self.partCrop_width_height = (150, 150)
 
@@ -154,7 +152,7 @@ class InspectionThread(QThread):
         self.timerFinish_mini = None
         self.fps_mini = None
 
-        self.InspectionImages = [None]*5
+        self.InspectionImages = [None]*10
 
         self.InspectionResult_DetectionID = [None]*5
         self.InspectionResult_DetectionID_int = None
@@ -216,34 +214,9 @@ class InspectionThread(QThread):
         print(f"Serial Number Back:  {self.serialNumber_back}")
         print(f"Instruction Code:     {self.InstructionCode}")
 
-    def initialize_single_camera(self, camID):
-        if self.cap_cam is not None:
-            self.cap_cam.release()  # Release the previous camera if it's already open
-            print(f"Camera {self.inspection_config.cameraID} released.")
-
-        if camID == -1:
-            print("No valid camera selected, displaying placeholder.")
-            self.cap_cam = None  # No camera initialized
-            # self.frame = self.create_placeholder_image()
-        else:
-            print(f"Initializing camera with ID {camID}")
-            self.cap_cam = initialize_camera(camID)
-            if not self.cap_cam.isOpened():
-                print(f"Failed to open camera with ID {camID}")
-                self.cap_cam = None
-            else:
-                print(f"Initialized Camera on ID {camID}")
-
-    def release_camera(self):
-        if self.cap_cam is not None:
-            self.cap_cam.release()
-            self.cap_cam = None
-            print("Camera released.")
-
-        if self.cap_cam0 is not None:
-            self.cap_cam0.release()
-            self.cap_cam0 = None
-            print("Camera 0 released.")
+    @pyqtSlot(np.ndarray)
+    def receive_frame(self, frame):
+        self.latest_frame = frame.copy()  
 
     def run(self):
         #initialize the database
@@ -312,19 +285,11 @@ class InspectionThread(QThread):
         self.initialize_model()
         print("AI Model Initialized")
 
-        self.current_cameraID = self.inspection_config.cameraID
-        self.initialize_single_camera(self.current_cameraID)
-        self.initialize_single_camera(0)
-
         # for key, value in self.widget_dir_map.items():
         #     self.inspection_config.current_numofPart[key] = self.get_last_entry_currentnumofPart(value)
         #     self.inspection_config.today_numofPart[key] = self.get_last_entry_total_numofPart(value)
 
         while self.running:
-
-
-            if self.inspection_config.widget == 0:
-                self.inspection_config.cameraID = -1
 
             if self.inspection_config.widget == 5:
                 if self.inspection_config.furyou_plus or self.inspection_config.furyou_minus or self.inspection_config.kansei_plus or self.inspection_config.kansei_minus or self.inspection_config.furyou_plus_10 or self.inspection_config.furyou_minus_10 or self.inspection_config.kansei_plus_10 or self.inspection_config.kansei_minus_10:
@@ -361,12 +326,16 @@ class InspectionThread(QThread):
                             PPMS = "COUNTERRESET")  
 
 
-                if self.cap_cam is not None:
-                    _, self.camFrame = self.cap_cam.read()
+                if self.latest_frame is not None:
+                    self.camFrame = self.latest_frame
                 else:
                     print("Camera 0 is not opened, creating placeholder image.")
                     self.camFrame = np.zeros((self.frame_height, self.frame_width, 3), dtype=np.uint8)
                     self.camFrame[:] = (0, 255, 0)
+
+                test = 0
+                if test == 1:
+                    self.camFrame = cv2.imread("./aikensa/debug_images/03.png")
 
                 self.part1Crop = self.camFrame[self.part1Crop_Pos[1]:self.part1Crop_Pos[1]+self.partCrop_width_height[1], 
                                                 self.part1Crop_Pos[0]:self.part1Crop_Pos[0]+self.partCrop_width_height[0]]
@@ -389,6 +358,7 @@ class InspectionThread(QThread):
                 self.part10Crop = self.camFrame[self.part10Crop_Pos[1]:self.part10Crop_Pos[1]+self.partCrop_width_height[1],
                                                 self.part10Crop_Pos[0]:self.part10Crop_Pos[0]+self.partCrop_width_height[0]]
          
+
                 #print the part number
                 if self.part1Crop is not None:
                     self.part1Crop = self.downSampling(self.part1Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
@@ -653,6 +623,8 @@ class InspectionThread(QThread):
             
                 self.P668307UA0A_InspectionStatus.emit(self.InspectionStatus)
 
+                self.msleep(5)
+
         self.msleep(5)
 
 
@@ -870,11 +842,23 @@ class InspectionThread(QThread):
         print(f"Time to {message} : {(self.timerFinish_mini - self.timerStart_mini) * 1000} ms")
         # print(f"FPS of {message} : {self.fps_mini}")
 
-    def convertQImage(self, image):
-        h, w, ch = image.shape
-        bytesPerLine = ch * w
-        processed_image = QImage(image.data, w, h, bytesPerLine, QImage.Format_BGR888)
-        return processed_image
+    def convertQImage(self, frame: np.ndarray) -> QImage:
+        """Safely convert a NumPy image (from BGRA or BGR) to QImage."""
+        # If BGRA (4 channels)
+        if frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGB)
+            height, width, _ = frame.shape
+            return QImage(frame.data, width, height, width * 3, QImage.Format_RGB888).copy()
+
+        # If BGR (3 channels)
+        elif frame.shape[2] == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            height, width, _ = frame.shape
+            return QImage(frame.data, width, height, width * 3, QImage.Format_RGB888).copy()
+
+        else:
+            raise ValueError("Unsupported image format")
+
     
     def converQImageRGB(self, image):
         h, w, ch = image.shape

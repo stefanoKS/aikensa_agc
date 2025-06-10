@@ -17,6 +17,7 @@ from aikensa.thread.inspection_thread import InspectionThread, InspectionConfig
 
 from aikensa.thread.time_thread import TimeMonitorThread
 from aikensa.thread.modbus_thread import ModbusServerThread
+from aikensa.thread.camera_thread import CameraThread
 
 
 # List of UI files to be loaded
@@ -40,6 +41,9 @@ class AIKensa(QMainWindow):
 
         self.modbusThread = ModbusServerThread(host=server_ip_address, port=server_port)
         self.inspection_thread = InspectionThread(InspectionConfig(),  modbus_thread=self.modbusThread)  
+        self.camera_thread = CameraThread(config_path="./aikensa/thread/TIS_config.yaml")
+        self.camera_thread.new_frame.connect(self.inspection_thread.receive_frame)
+        self.camera_thread.start()
 
         self.modbusThread.holdingUpdated.connect(self.inspection_thread.on_holding_update)
         self.modbusThread.start()
@@ -173,7 +177,8 @@ class AIKensa(QMainWindow):
         self.inspection_thread.stop()
         self.modbusThread.stop()
         self.timeMonitorThread.stop()
-
+        self.camera_thread.stop()
+        
         time.sleep(1.0)
         QCoreApplication.instance().quit()
 

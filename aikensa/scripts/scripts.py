@@ -28,10 +28,13 @@ def invert_16bit_int(value: int) -> int:
         raise ValueError("Input must be a 16-bit unsigned integer (0 to 65535)")
     return value ^ 0xFFFF
 
-def random_list(length: int) -> List[int]:
+def random_list(length: int, seed: int = None) -> List[int]:
     """
     Generates a random list of 0s and 1s of specified length.
+    Optionally sets the random seed for reproducibility.
     """
     if length < 0:
         raise ValueError("Length must be a non-negative integer")
+    if seed is not None:
+        random.seed(seed)
     return [random.randint(0, 1) for _ in range(length)]

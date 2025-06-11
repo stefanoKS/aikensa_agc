@@ -41,7 +41,7 @@ class AIKensa(QMainWindow):
 
         self.modbusThread = ModbusServerThread(host=server_ip_address, port=server_port)
         self.inspection_thread = InspectionThread(InspectionConfig(),  modbus_thread=self.modbusThread)  
-        self.camera_thread = CameraThread(config_path="./aikensa/thread/TIS_config.yaml")
+        self.camera_thread = CameraThread(config_path="./aikensa/thread/TIS_config.yaml", camera_config_path="./aikensa/config_yaml/cam_config.yaml")
         self.camera_thread.new_frame.connect(self.inspection_thread.receive_frame)
         self.camera_thread.start()
 

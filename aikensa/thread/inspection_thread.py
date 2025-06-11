@@ -134,11 +134,11 @@ class InspectionThread(QThread):
         self.part3Crop_Pos = (320, 960)
         self.part4Crop_Pos = (320, 1173)
         self.part5Crop_Pos = (320, 1395)
-        self.part6Crop_Pos = (1565, 515)
-        self.part7Crop_Pos = (1565, 740)
-        self.part8Crop_Pos = (1565, 960)
-        self.part9Crop_Pos = (1565, 1173)
-        self.part10Crop_Pos = (1565, 1395)
+        self.part6Crop_Pos = (1555, 515)
+        self.part7Crop_Pos = (1555, 740)
+        self.part8Crop_Pos = (1555, 960)
+        self.part9Crop_Pos = (1555, 1173)
+        self.part10Crop_Pos = (1555, 1395)
 
         self.partCrop_width_height = (150, 150)
 
@@ -155,22 +155,22 @@ class InspectionThread(QThread):
 
         self.InspectionImages = [None]*10
 
-        self.InspectionResult_DetectionID = [None]*5
+        self.InspectionResult_DetectionID = [None]*10
         self.InspectionResult_DetectionID_int = None
 
-        self.InspectionResult_SetID_OK = [None]*5
+        self.InspectionResult_SetID_OK = [None]*10
         self.InspectionResult_SetID_OK_int = None
 
-        self.InspectionResult_SetID_NG = [None]*5
-        self.InspectionResult_SetID_NG_int = [None]*5
+        self.InspectionResult_SetID_NG = [None]*10
+        self.InspectionResult_SetID_NG_int = [None]*10
 
-        self.InspectionResult_BouseiID_OK = [None]*5
-        self.InspectionResult_BouseiID_OK_int = [None]*5
+        self.InspectionResult_BouseiID_OK = [None]*10
+        self.InspectionResult_BouseiID_OK_int = [None]*10
 
-        self.InspectionResult_BouseiID_NG = [None]*5
-        self.InspectionResult_BouseiID_NG_int = [None]*5
+        self.InspectionResult_BouseiID_NG = [None]*10
+        self.InspectionResult_BouseiID_NG_int = [None]*10
 
-        self.InspectionResult_NGReason = [None]*5
+        self.InspectionResult_NGReason = [None]*10
         
         self.InspectionStatus = [None]*10
 

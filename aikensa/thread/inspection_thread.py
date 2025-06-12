@@ -334,10 +334,6 @@ class InspectionThread(QThread):
                     self.camFrame = np.zeros((self.frame_height, self.frame_width, 3), dtype=np.uint8)
                     self.camFrame[:] = (0, 255, 0)
 
-                test = 0
-                if test == 1:
-                    self.camFrame = cv2.imread("./aikensa/debug_images/03.png")
-
                 self.part1Crop = self.camFrame[self.part1Crop_Pos[1]:self.part1Crop_Pos[1]+self.partCrop_width_height[1], 
                                                 self.part1Crop_Pos[0]:self.part1Crop_Pos[0]+self.partCrop_width_height[0]]
                 self.part2Crop = self.camFrame[self.part2Crop_Pos[1]:self.part2Crop_Pos[1]+self.partCrop_width_height[1],
@@ -538,6 +534,15 @@ class InspectionThread(QThread):
                         pass
                     else:
                         self.InstructionCode_prev = self.InstructionCode
+
+
+                        for i in self.InspectionImages:
+                            if i is not None:
+                                # Do YOLO inference to check whether part exists
+                                _ = self.P668307UA0A_partDetectionModel(cv2.cvtColor(i, cv2.COLOR_BGR2RGB), stream=True, verbose=False)
+                                self.InspectionResult_DetectionID[i] = list(_)[0].probs.data.argmax().item()
+                                print (f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
+                        
                         self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
                         seed = int(time.time() * 1000) % (2**32 - 1)
                         self.InspectionResult_BouseiID_OK = random_list(10, seed=seed) #Dummy values for testing
@@ -563,6 +568,8 @@ class InspectionThread(QThread):
                         time.sleep(0.5)
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
                         print("0 State Code Emitted, ready for next instruction")
+
+                    
                         
 
                 # if self.inspection_config.doInspection is True:

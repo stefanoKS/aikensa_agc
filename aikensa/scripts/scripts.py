@@ -38,3 +38,15 @@ def random_list(length: int, seed: int = None) -> List[int]:
     if seed is not None:
         random.seed(seed)
     return [random.randint(0, 1) for _ in range(length)]
+
+
+def combine_by_and(bit_list):
+    """
+    Given a 10-element list of 0s and 1s, return a new list of 5 elements
+    where each is the AND of bit_list[i] and bit_list[i+5].
+    """
+    if len(bit_list) != 10:
+        raise ValueError("Input list must be exactly 10 elements long")
+
+    return [bit_list[i] & bit_list[i + 5] for i in range(5)]
+

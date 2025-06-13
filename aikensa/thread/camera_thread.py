@@ -34,35 +34,38 @@ class CameraThread(QThread):
 
     def run(self):
         self.Tis = TIS()
-        self.Tis.open_device(self.serial, self.width, self.height, f"{self.fps}/1", SinkFormats.BGRA, False)
-        self.Tis.start_pipeline()
-        # self.Tis.list_properties()
+        try:
+            self.Tis.open_device(self.serial, self.width, self.height, f"{self.fps}/1", SinkFormats.BGRA, False)
+            self.Tis.start_pipeline()
+            # self.Tis.list_properties()
 
+            self.Tis.set_property("ExposureAuto", "Off")
+            self.Tis.set_property("GainAuto", "Off")
+            self.Tis.set_property("BlackLevel", self.black_level)
+            self.Tis.set_property("ExposureTime", self.exposure_time)
+            self.Tis.set_property("Gain", self.gain)
+            self.Tis.set_property("BalanceWhiteAuto", "Off")
 
-        self.Tis.set_property("BlackLevel", self.black_level)
-        self.Tis.set_property("ExposureAuto", "Off")
-        self.Tis.set_property("ExposureTime", self.exposure_time)
-        self.Tis.set_property("Gain", self.gain)
-        self.Tis.set_property("GainAuto", "Off")
-        self.Tis.set_property("BalanceWhiteAuto", "Off")
-    
-        BlackLevel = self.Tis.get_property("BlackLevel")
-        ExposureAuto = self.Tis.get_property("ExposureAuto")
-        ExposureTime = self.Tis.get_property("ExposureTime")
-        Gain = self.Tis.get_property("Gain")
-        GainAuto = self.Tis.get_property("GainAuto")
-        WhiteBalanceAuto = self.Tis.get_property("BalanceWhiteAuto")
+            # BlackLevel = self.Tis.get_property("BlackLevel")
+            # ExposureAuto = self.Tis.get_property("ExposureAuto")
+            # ExposureTime = self.Tis.get_property("ExposureTime")
+            # Gain = self.Tis.get_property("Gain")
+            # GainAuto = self.Tis.get_property("GainAuto")
+            # WhiteBalanceAuto = self.Tis.get_property("BalanceWhiteAuto")
 
-        print(f"BlackLevel: {BlackLevel}, ExposureAuto: {ExposureAuto}, ExposureTime: {ExposureTime}, Gain: {Gain}, GainAuto: {GainAuto}")
-        print(f"WhiteBalanceAuto: {WhiteBalanceAuto}")
+            # print(f"BlackLevel: {BlackLevel}, ExposureAuto: {ExposureAuto}, ExposureTime: {ExposureTime}, Gain: {Gain}, GainAuto: {GainAuto}")
+            # print(f"WhiteBalanceAuto: {WhiteBalanceAuto}")
 
-        self.running = True
-        while self.running:
-            if self.Tis.snap_image(0.1):
-                image = self.Tis.get_image()
-                if image is not None:
-                    self.new_frame.emit(image.copy())
-            time.sleep(0.01)
+            self.running = True
+            while self.running:
+                if self.Tis.snap_image(0.1):
+                    image = self.Tis.get_image()
+                    if image is not None:
+                        self.new_frame.emit(image.copy())
+                time.sleep(0.01)
+        except Exception as e:
+            print(f"Error initializing camera pipeline: {e}")
+            self.running = False
 
     def stop(self):
         self.running = False

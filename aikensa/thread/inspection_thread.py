@@ -20,12 +20,10 @@ from aikensa.opencv_imgprocessing.arucoplanarize import planarize, planarize_ima
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
-from aikensa.parts_config.sound import play_do_sound, play_picking_sound, play_re_sound, play_mi_sound, play_alarm_sound, play_konpou_sound, play_keisoku_sound
-
 from ultralytics import YOLO
 from PIL import ImageFont, ImageDraw, Image
 
-from aikensa.scripts.scripts import list_to_16bit_int, load_register_map, invert_16bit_int, random_list
+from aikensa.scripts.scripts import list_to_16bit_int, load_register_map, invert_16bit_int, random_list, combine_by_and
 import time
 
 @dataclass
@@ -536,7 +534,7 @@ class InspectionThread(QThread):
                         self.InstructionCode_prev = self.InstructionCode
 
 
-                        for i in self.InspectionImages:
+                        for i in len(self.InspectionImages):
                             if i is not None:
                                 # Do YOLO inference to check whether part exists
                                 _ = self.P668307UA0A_partDetectionModel(cv2.cvtColor(i, cv2.COLOR_BGR2RGB), stream=True, verbose=False)
@@ -544,8 +542,7 @@ class InspectionThread(QThread):
                                 print (f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
                         
                         self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                        seed = int(time.time() * 1000) % (2**32 - 1)
-                        self.InspectionResult_BouseiID_OK = random_list(10, seed=seed) #Dummy values for testing
+                        self.InspectionResult_BouseiID_OK = combine_by_and(self.InspectionResult)
                         self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]
 
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)

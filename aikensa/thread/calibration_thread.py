@@ -18,9 +18,6 @@ from aikensa.opencv_imgprocessing.arucoplanarize import planarize, planarize_ima
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
-from aikensa.parts_config.sound import play_do_sound, play_picking_sound, play_re_sound, play_mi_sound, play_alarm_sound, play_konpou_sound, play_keisoku_sound
-
-
 @dataclass
 class CalibrationConfig:
     widget: int = 0

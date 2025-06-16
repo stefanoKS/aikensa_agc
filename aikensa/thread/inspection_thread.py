@@ -408,31 +408,31 @@ class InspectionThread(QThread):
                     # Do Inference
 
 
-                if self.inspection_config.doInspection is True:
-                    self.inspection_config.doInspection = False
-                    #Save images, time and part number to ./training_images
-                    if not os.path.exists("./aikensa/training_images"):
-                        os.makedirs("./aikensa/training_images")
-                        #Use time for the file name
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    #save InspectionImages with cv2.write
-                    self.InspectionImages[0] = self.part1Crop
-                    self.InspectionImages[1] = self.part2Crop
-                    self.InspectionImages[2] = self.part3Crop
-                    self.InspectionImages[3] = self.part4Crop
-                    self.InspectionImages[4] = self.part5Crop
-                    self.InspectionImages[5] = self.part6Crop
-                    self.InspectionImages[6] = self.part7Crop
-                    self.InspectionImages[7] = self.part8Crop
-                    self.InspectionImages[8] = self.part9Crop
-                    self.InspectionImages[9] = self.part10Crop
+                # if self.inspection_config.doInspection is True:
+                #     self.inspection_config.doInspection = False
+                #     #Save images, time and part number to ./training_images
+                #     if not os.path.exists("./aikensa/training_images"):
+                #         os.makedirs("./aikensa/training_images")
+                #         #Use time for the file name
+                #     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                #     #save InspectionImages with cv2.write
+                #     self.InspectionImages[0] = self.part1Crop
+                #     self.InspectionImages[1] = self.part2Crop
+                #     self.InspectionImages[2] = self.part3Crop
+                #     self.InspectionImages[3] = self.part4Crop
+                #     self.InspectionImages[4] = self.part5Crop
+                #     self.InspectionImages[5] = self.part6Crop
+                #     self.InspectionImages[6] = self.part7Crop
+                #     self.InspectionImages[7] = self.part8Crop
+                #     self.InspectionImages[8] = self.part9Crop
+                #     self.InspectionImages[9] = self.part10Crop
                     
 
-                    for i, img in enumerate(self.InspectionImages):
-                        if img is not None:
-                            filename = f"./aikensa/training_images/part{i+1}_{timestamp}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
+                    # for i, img in enumerate(self.InspectionImages):
+                    #     if img is not None:
+                    #         filename = f"./aikensa/training_images/part{i+1}_{timestamp}.jpg"
+                    #         cv2.imwrite(filename, img)
+                    #         print(f"Saved {filename}")
 
 
                 if self.InstructionCode == 0:
@@ -446,8 +446,8 @@ class InspectionThread(QThread):
                         # self.InspectionResult_SetID_OK = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
                         # self.InspectionResult_SetID_NG = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-                        self.InspectionResult_BouseiID_OK = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                        self.InspectionResult_BouseiID_NG = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                        self.InspectionResult_BouseiID_OK = [0, 0, 0, 0, 0]
+                        self.InspectionResult_BouseiID_NG = [0, 0, 0, 0, 0]
 
 
 
@@ -527,6 +527,10 @@ class InspectionThread(QThread):
 
                 # Instruction 2 is PLC request to start the rush(bousei shori) inspection
 
+                if self.inspection_config.doInspection is True:
+                    self.inspection_config.doInspection = False
+                    self.InstructionCode = 2
+
                 if self.InstructionCode == 2:
                     if self.InstructionCode_prev == 2:
                         pass
@@ -534,15 +538,16 @@ class InspectionThread(QThread):
                         self.InstructionCode_prev = self.InstructionCode
 
 
-                        for i in len(self.InspectionImages):
-                            if i is not None:
-                                # Do YOLO inference to check whether part exists
-                                _ = self.P668307UA0A_partDetectionModel(cv2.cvtColor(i, cv2.COLOR_BGR2RGB), stream=True, verbose=False)
-                                self.InspectionResult_DetectionID[i] = list(_)[0].probs.data.argmax().item()
-                                print (f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
+                    for i in range(len(self.InspectionImages)):
+                        image = self.InspectionImages[i]
+                        if image is not None:
+                            # Do YOLO inference to check whether part exists
+                            _ = self.P668307UA0A_partDetectionModel(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), stream=True, verbose=False)
+                            self.InspectionResult_DetectionID[i] = list(_)[0].probs.data.argmax().item()
+                            print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
                         
                         self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                        self.InspectionResult_BouseiID_OK = combine_by_and(self.InspectionResult)
+                        self.InspectionResult_BouseiID_OK = combine_by_and(self.InspectionResult_DetectionID)
                         self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]
 
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)

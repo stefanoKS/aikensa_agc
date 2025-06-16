@@ -28,6 +28,9 @@ class CameraThread(QThread):
         self.gain = camera_config.get("Gain")
         self.gain_auto = camera_config.get("GainAuto")
         self.white_balance_auto = camera_config.get("WhiteBalanceAuto")
+        self.white_balance_red = camera_config.get("WhiteBalanceRed")
+        self.white_balance_blue = camera_config.get("WhiteBalanceBlue")
+        self.white_balance_green = camera_config.get("WhiteBalanceGreen")
 
         if None in (self.serial, self.width, self.height, self.fps):
             raise ValueError("Invalid config file.")
@@ -45,6 +48,10 @@ class CameraThread(QThread):
             self.Tis.set_property("ExposureTime", self.exposure_time)
             self.Tis.set_property("Gain", self.gain)
             self.Tis.set_property("BalanceWhiteAuto", "Off")
+            self.Tis.set_property("BalanceWhiteRed", 1.0)
+            self.Tis.set_property("BalanceWhiteBlue", 1.8)
+            self.Tis.set_property("BalanceWhiteGreen", 1.0)
+            # self.Tis.set_property("BalanceWhite", self.white_balance_auto)
 
             # BlackLevel = self.Tis.get_property("BlackLevel")
             # ExposureAuto = self.Tis.get_property("ExposureAuto")
@@ -55,6 +62,7 @@ class CameraThread(QThread):
 
             # print(f"BlackLevel: {BlackLevel}, ExposureAuto: {ExposureAuto}, ExposureTime: {ExposureTime}, Gain: {Gain}, GainAuto: {GainAuto}")
             # print(f"WhiteBalanceAuto: {WhiteBalanceAuto}")
+            print(f"WhiteBalanceRed: {self.Tis.get_property('BalanceWhiteRed')}, WhiteBalanceBlue: {self.Tis.get_property('BalanceWhiteBlue')}, WhiteBalanceGreen: {self.Tis.get_property('BalanceWhiteGreen')}")
 
             self.running = True
             while self.running:

@@ -4,3 +4,6 @@ ExposureTime : 45000
 Gain : 0
 GainAuto : "False"
 BalanceWhiteAuto : "False"
+BalanceWhiteRed : 2.08
+BalanceWhiteGreen : 0.97
+BalanceWhiteBlue : 1.97

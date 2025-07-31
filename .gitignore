@@ -173,8 +173,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-./aikensa/models
 ./aikensa/debug*
 ./aikensa/training*
 ./aikensa/inspection/*
-./aikensa/inspection*
+./aikensa/inspection

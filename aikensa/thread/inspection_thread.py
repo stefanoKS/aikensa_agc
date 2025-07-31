@@ -479,13 +479,22 @@ class InspectionThread(QThread):
                         print(f"Part {i+1} Image: {image is not None}")
                         if image is not None:
                             # Do YOLO inference to check whether part exists
-                            _ = self.P668307UA0A_partDetectionModel(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), stream=True, verbose=False)
+                            _ = self.P668307UA0A_kensaModel(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(_)[0].probs.data.argmax().item()
                             print (f"Part {i+1} Detection ID: {self.InspectionResult_DetectionID[i]}")
                             #save image too
-                            self.save_image(image)
+                            self.save_image(image, self.InspectionResult_DetectionID[i])
+
                             
-                                
+                            #Detection ID is as follows:
+                            # {0: 'NOPART', 1: 'NURIWASURE', 2: 'OK'}
+                            # If Detection ID is 2, then it is OK, otherwise it is NG
+
+                            #remap the detection ID like this: 
+                            # {0: 'NOPART' into 1, 1: 'NURIWASURE' into 1, 2: 'OK' into 0} -> so Basically if its 2 its 0, others will be 1
+                            self.InspectionResult_DetectionID[i] = 1 if self.InspectionResult_DetectionID[i] != 2 else 0
+                            print(f"Part {i+1} Remapped Detection ID: {self.InspectionResult_DetectionID[i]}")
+
                     # self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
                     self.InspectionResult_BouseiID_OK = combine_by_and(self.InspectionResult_DetectionID)
                     self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]
@@ -706,9 +715,22 @@ class InspectionThread(QThread):
 
         return image
 
-    def save_image(self, image):
-        dir = "aikensa/inspection/" + self.widget_dir_map[self.inspection_config.widget]
+    def save_image(self, image, detection_id):
+        #Detection ID is as follows:
+        # {0: 'NOPART', 1: 'NURIWASURE', 2: 'OK'}
+        #Save the image in the directory based on the detection ID
+        if detection_id == 0:
+            dir = f"aikensa/inspection/{self.widget_dir_map[self.inspection_config.widget]}/nopart/"
+        elif detection_id == 1:
+            dir = f"aikensa/inspection/{self.widget_dir_map[self.inspection_config.widget]}/nuriwasure/"
+        elif detection_id == 2:
+            dir = f"aikensa/inspection/{self.widget_dir_map[self.inspection_config.widget]}/ok/"
+        else:
+            print(f"Unknown detection ID: {detection_id}, saving in default directory.")
+
         os.makedirs(dir, exist_ok=True)
+        # Create a unique filename based on the current timestamp
+
         base_filename = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{base_filename}.png"
         filepath = os.path.join(dir, filename)
@@ -794,6 +816,7 @@ class InspectionThread(QThread):
         P668307UA0A_partDetectionModel_path = "./aikensa/models/P668307UA0A_partDetectionModel.pt"
         P668307UA0A_setSegmentationModel_path = "./aikensa/models/P668307UA0A_setSegmentationModel.pt"
         P668307UA0A_bouseiSegmentationModel_path = "./aikensa/models/P668307UA0A_bouseiSegmentationModel.pt"
+        P668307UA0A_kensaModel_path = "./aikensa/models/P668307UA0A_kensaModel.pt"
 
         # Initialize models as None if file does not exist, otherwise load the model
         if os.path.exists(P668307UA0A_partDetectionModel_path):
@@ -814,9 +837,16 @@ class InspectionThread(QThread):
             print(f"Model file {P668307UA0A_bouseiSegmentationModel_path} does not exist. Initializing as None.")
             P668307UA0A_bouseiSegmentationModel = None
 
+        if os.path.exists(P668307UA0A_kensaModel_path):
+            P668307UA0A_kensaModel = YOLO(P668307UA0A_kensaModel_path)
+        else:
+            print(f"Model file {P668307UA0A_kensaModel_path} does not exist. Initializing as None.")
+            P668307UA0A_kensaModel = None
+
         self.P668307UA0A_partDetectionModel = P668307UA0A_partDetectionModel
         self.P668307UA0A_setSegmentationModel = P668307UA0A_setSegmentationModel
         self.P668307UA0A_bouseiSegmentationModel = P668307UA0A_bouseiSegmentationModel
+        self.P668307UA0A_kensaModel = P668307UA0A_kensaModel
 
     def stop(self):
         self.running = False

@@ -81,7 +81,7 @@
      <rect>
       <x>380</x>
       <y>120</y>
-      <width>581</width>
+      <width>531</width>
       <height>611</height>
      </rect>
     </property>
@@ -94,7 +94,7 @@
     <widget class="QLabel" name="FramePart1">
      <property name="geometry">
       <rect>
-       <x>110</x>
+       <x>10</x>
        <y>10</y>
        <width>110</width>
        <height>110</height>
@@ -113,7 +113,7 @@
     <widget class="QLabel" name="FramePart2">
      <property name="geometry">
       <rect>
-       <x>110</x>
+       <x>10</x>
        <y>130</y>
        <width>110</width>
        <height>110</height>
@@ -132,7 +132,7 @@
     <widget class="QLabel" name="FramePart3">
      <property name="geometry">
       <rect>
-       <x>111</x>
+       <x>11</x>
        <y>250</y>
        <width>110</width>
        <height>110</height>
@@ -151,7 +151,7 @@
     <widget class="QLabel" name="FramePart4">
      <property name="geometry">
       <rect>
-       <x>110</x>
+       <x>10</x>
        <y>370</y>
        <width>110</width>
        <height>110</height>
@@ -170,7 +170,7 @@
     <widget class="QLabel" name="FramePart5">
      <property name="geometry">
       <rect>
-       <x>110</x>
+       <x>10</x>
        <y>490</y>
        <width>110</width>
        <height>110</height>
@@ -189,9 +189,9 @@
     <widget class="QLabel" name="StatusP1">
      <property name="geometry">
       <rect>
-       <x>10</x>
+       <x>250</x>
        <y>10</y>
-       <width>91</width>
+       <width>121</width>
        <height>110</height>
       </rect>
      </property>
@@ -217,9 +217,9 @@
     <widget class="QLabel" name="StatusP2">
      <property name="geometry">
       <rect>
-       <x>10</x>
+       <x>250</x>
        <y>130</y>
-       <width>91</width>
+       <width>121</width>
        <height>110</height>
       </rect>
      </property>
@@ -245,9 +245,9 @@
     <widget class="QLabel" name="StatusP3">
      <property name="geometry">
       <rect>
-       <x>10</x>
+       <x>250</x>
        <y>250</y>
-       <width>91</width>
+       <width>121</width>
        <height>110</height>
       </rect>
      </property>
@@ -273,9 +273,9 @@
     <widget class="QLabel" name="StatusP4">
      <property name="geometry">
       <rect>
-       <x>10</x>
+       <x>250</x>
        <y>370</y>
-       <width>91</width>
+       <width>121</width>
        <height>110</height>
       </rect>
      </property>
@@ -301,9 +301,9 @@
     <widget class="QLabel" name="StatusP5">
      <property name="geometry">
       <rect>
-       <x>10</x>
+       <x>250</x>
        <y>490</y>
-       <width>91</width>
+       <width>121</width>
        <height>110</height>
       </rect>
      </property>
@@ -329,7 +329,7 @@
     <widget class="QLabel" name="FramePart7">
      <property name="geometry">
       <rect>
-       <x>360</x>
+       <x>130</x>
        <y>130</y>
        <width>110</width>
        <height>110</height>
@@ -348,7 +348,7 @@
     <widget class="QLabel" name="FramePart8">
      <property name="geometry">
       <rect>
-       <x>360</x>
+       <x>130</x>
        <y>250</y>
        <width>110</width>
        <height>110</height>
@@ -367,7 +367,7 @@
     <widget class="QLabel" name="FramePart9">
      <property name="geometry">
       <rect>
-       <x>360</x>
+       <x>130</x>
        <y>370</y>
        <width>110</width>
        <height>110</height>
@@ -386,7 +386,7 @@
     <widget class="QLabel" name="FramePart6">
      <property name="geometry">
       <rect>
-       <x>360</x>
+       <x>130</x>
        <y>10</y>
        <width>110</width>
        <height>110</height>
@@ -405,7 +405,7 @@
     <widget class="QLabel" name="FramePart10">
      <property name="geometry">
       <rect>
-       <x>360</x>
+       <x>130</x>
        <y>490</y>
        <width>110</width>
        <height>110</height>
@@ -421,151 +421,11 @@
       <set>Qt::AlignCenter</set>
      </property>
     </widget>
-    <widget class="QLabel" name="StatusP7">
-     <property name="geometry">
-      <rect>
-       <x>480</x>
-       <y>130</y>
-       <width>91</width>
-       <height>110</height>
-      </rect>
-     </property>
-     <property name="font">
-      <font>
-       <family>Ubuntu Mono</family>
-       <pointsize>17</pointsize>
-       <weight>50</weight>
-       <bold>false</bold>
-       <underline>false</underline>
-      </font>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">background-color: rgb(255, 255, 255);</string>
-     </property>
-     <property name="text">
-      <string>XX</string>
-     </property>
-     <property name="alignment">
-      <set>Qt::AlignCenter</set>
-     </property>
-    </widget>
-    <widget class="QLabel" name="StatusP9">
-     <property name="geometry">
-      <rect>
-       <x>480</x>
-       <y>370</y>
-       <width>91</width>
-       <height>110</height>
-      </rect>
-     </property>
-     <property name="font">
-      <font>
-       <family>Ubuntu Mono</family>
-       <pointsize>17</pointsize>
-       <weight>50</weight>
-       <bold>false</bold>
-       <underline>false</underline>
-      </font>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">background-color: rgb(255, 255, 255);</string>
-     </property>
-     <property name="text">
-      <string>XX</string>
-     </property>
-     <property name="alignment">
-      <set>Qt::AlignCenter</set>
-     </property>
-    </widget>
-    <widget class="QLabel" name="StatusP10">
-     <property name="geometry">
-      <rect>
-       <x>480</x>
-       <y>490</y>
-       <width>91</width>
-       <height>110</height>
-      </rect>
-     </property>
-     <property name="font">
-      <font>
-       <family>Ubuntu Mono</family>
-       <pointsize>17</pointsize>
-       <weight>50</weight>
-       <bold>false</bold>
-       <underline>false</underline>
-      </font>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">background-color: rgb(255, 255, 255);</string>
-     </property>
-     <property name="text">
-      <string>XX</string>
-     </property>
-     <property name="alignment">
-      <set>Qt::AlignCenter</set>
-     </property>
-    </widget>
-    <widget class="QLabel" name="StatusP6">
-     <property name="geometry">
-      <rect>
-       <x>480</x>
-       <y>10</y>
-       <width>91</width>
-       <height>110</height>
-      </rect>
-     </property>
-     <property name="font">
-      <font>
-       <family>Ubuntu Mono</family>
-       <pointsize>17</pointsize>
-       <weight>50</weight>
-       <bold>false</bold>
-       <underline>false</underline>
-      </font>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">background-color: rgb(255, 255, 255);</string>
-     </property>
-     <property name="text">
-      <string>XX</string>
-     </property>
-     <property name="alignment">
-      <set>Qt::AlignCenter</set>
-     </property>
-    </widget>
-    <widget class="QLabel" name="StatusP8">
-     <property name="geometry">
-      <rect>
-       <x>480</x>
-       <y>250</y>
-       <width>91</width>
-       <height>110</height>
-      </rect>
-     </property>
-     <property name="font">
-      <font>
-       <family>Ubuntu Mono</family>
-       <pointsize>17</pointsize>
-       <weight>50</weight>
-       <bold>false</bold>
-       <underline>false</underline>
-      </font>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">background-color: rgb(255, 255, 255);</string>
-     </property>
-     <property name="text">
-      <string>XX</string>
-     </property>
-     <property name="alignment">
-      <set>Qt::AlignCenter</set>
-     </property>
-    </widget>
    </widget>
    <widget class="QPushButton" name="mainmenubutton">
     <property name="geometry">
      <rect>
-      <x>970</x>
+      <x>920</x>
       <y>690</y>
       <width>211</width>
       <height>41</height>

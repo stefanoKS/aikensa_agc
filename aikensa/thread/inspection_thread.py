@@ -127,16 +127,16 @@ class InspectionThread(QThread):
         self.planarizeTransform_temp = None
         self.planarizeTransform_temp_scaled = None
         
-        self.part1Crop_Pos = (320, 515)
-        self.part2Crop_Pos = (320, 740)
-        self.part3Crop_Pos = (320, 960)
-        self.part4Crop_Pos = (320, 1173)
-        self.part5Crop_Pos = (320, 1395)
-        self.part6Crop_Pos = (1555, 515)
-        self.part7Crop_Pos = (1555, 740)
-        self.part8Crop_Pos = (1555, 960)
-        self.part9Crop_Pos = (1555, 1173)
-        self.part10Crop_Pos = (1555, 1395)
+        self.part1Crop_Pos = (295, 510)
+        self.part2Crop_Pos = (295, 740)
+        self.part3Crop_Pos = (295, 960)
+        self.part4Crop_Pos = (295, 1190)
+        self.part5Crop_Pos = (295, 1415)
+        self.part6Crop_Pos = (1560, 505)
+        self.part7Crop_Pos = (1560, 720)
+        self.part8Crop_Pos = (1560, 945)
+        self.part9Crop_Pos = (1565, 1173)
+        self.part10Crop_Pos = (1570, 1395)
 
         self.partCrop_width_height = (150, 150)
 
@@ -170,7 +170,7 @@ class InspectionThread(QThread):
 
         self.InspectionResult_NGReason = [None]*10
         
-        self.InspectionStatus = [None]*10
+        self.InspectionStatus = [None]*5
 
         self.widget_dir_map = {
             5: "P668307UA0A_COWL_TOP",
@@ -394,6 +394,12 @@ class InspectionThread(QThread):
                 
                 self.partNumber_signal.emit(self.partNumber)
 
+
+                if self.inspection_config.doInspection is True:
+                    self.inspection_config.doInspection = False
+                    self.InstructionCode = 2
+
+
                 if self.InstructionCode != 0:
                     self.InspectionImages[0] = self.part1Crop
                     self.InspectionImages[1] = self.part2Crop
@@ -441,95 +447,24 @@ class InspectionThread(QThread):
                     else:
                         self.InstructionCode_prev = self.InstructionCode
 
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                    self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-                        # self.InspectionResult_SetID_OK = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                        # self.InspectionResult_SetID_NG = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                    self.InspectionResult_BouseiID_OK = [0, 0, 0, 0, 0]
+                    self.InspectionResult_BouseiID_NG = [0, 0, 0, 0, 0]
 
-                        self.InspectionResult_BouseiID_OK = [0, 0, 0, 0, 0]
-                        self.InspectionResult_BouseiID_NG = [0, 0, 0, 0, 0]
+                    self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+                    self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
+                    self.InspectionResult_BouseiID_NG_int = list_to_16bit_int(self.InspectionResult_BouseiID_NG)
 
+                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
+                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
+                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
+                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
+                    
+                    # print(f"Inspection Result Bousei OK ID: {self.InspectionResult_BouseiID_OK}")
+                    # print(f"Inspection Result Bousei NG ID: {self.InspectionResult_BouseiID_NG}")
 
-
-                        # self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                        # self.InspectionResult_SetID_OK = random_list(3) #Dummy values for testing
-                        # self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]  # Invert the OK values for NG
-                        
-                        # self.InspectionResult_BouseiID_OK = random_list(3) #Dummy values for testing
-                        # self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]  # Invert the OK values for NG
-
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        # self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
-                        # self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
-                        self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
-                        self.InspectionResult_BouseiID_NG_int = list_to_16bit_int(self.InspectionResult_BouseiID_NG)
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID_int}")
-                        # print(f"Inspection Result Set ID: {self.InspectionResult_SetID_OK_int}")
-                        print(f"Inspection Result Bousei ID: {self.InspectionResult_BouseiID_OK_int}")
-                        
-                        # Send all zeros to the holding registers
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                        
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Bousei OK ID: {self.InspectionResult_BouseiID_OK}")
-                        print(f"Inspection Result Bousei NG ID: {self.InspectionResult_BouseiID_NG}")
-
-
-                        # Set the inspection status to 待機
-                        self.InspectionStatus = ["待機"] * 10
-                        
-                        #wait
-                        time.sleep(0.5)
-
-
-                # Instruction 1 is PLC request to start the set inspection
-
-                # if self.InstructionCode == 1:
-                #     if self.InstructionCode_prev == 1:
-                #         pass
-                #     else:
-                #         self.InstructionCode_prev = self.InstructionCode
-
-                #         self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                #         self.InspectionResult_SetID_OK = random_list(3) #Dummy values for testing
-                #         self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]  # Invert the OK values for NG
-                        
-                #         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                #         self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
-                #         self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
-
-                #         print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                #         print(f"Inspection Result Set OK ID: {self.InspectionResult_SetID_OK}")
-                #         print(f"Inspection Result Set NG ID: {self.InspectionResult_SetID_NG}")
-
-                #         #Emit the inspection result and serial number to holding registers
-                #         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"],[self.serialNumber_front])
-                #         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                #         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
-                #         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
-                #         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
-                #         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
-                #         print("Inspection Result Set ID Emitted")
-                #         # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
-                #         time.sleep(0.5)
-                #         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                #         print("0 State Code Emitted, ready for next instruction")
-
-                # Instruction 2 is PLC request to start the rush(bousei shori) inspection
-
-                if self.inspection_config.doInspection is True:
-                    self.inspection_config.doInspection = False
-                    self.InstructionCode = 2
+                    self.InspectionStatus = ["待機"] * 5
 
                 if self.InstructionCode == 2:
                     if self.InstructionCode_prev == 2:
@@ -537,111 +472,48 @@ class InspectionThread(QThread):
                     else:
                         self.InstructionCode_prev = self.InstructionCode
 
+                    print("State Code 2 Received, Starting Inspection")
 
                     for i in range(len(self.InspectionImages)):
                         image = self.InspectionImages[i]
+                        print(f"Part {i+1} Image: {image is not None}")
                         if image is not None:
                             # Do YOLO inference to check whether part exists
                             _ = self.P668307UA0A_partDetectionModel(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(_)[0].probs.data.argmax().item()
-                            print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                        self.InspectionResult_BouseiID_OK = combine_by_and(self.InspectionResult_DetectionID)
-                        self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]
+                            print (f"Part {i+1} Detection ID: {self.InspectionResult_DetectionID[i]}")
+                            #save image too
+                            self.save_image(image)
+                            
+                                
+                    # self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                    self.InspectionResult_BouseiID_OK = combine_by_and(self.InspectionResult_DetectionID)
+                    self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]
 
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
-                        self.InspectionResult_BouseiID_NG_int = list_to_16bit_int(self.InspectionResult_BouseiID_NG)
+                    for i in range (len(self.InspectionResult_BouseiID_OK)):
+                        if self.InspectionResult_BouseiID_OK[i] == 1:
+                            self.InspectionStatus[i] = "OK"
+                        elif self.InspectionResult_BouseiID_NG[i] == 1:
+                            self.InspectionStatus[i] = "NG"
 
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Bousei OK ID: {self.InspectionResult_BouseiID_OK}")
-                        print(f"Inspection Result Bousei NG ID: {self.InspectionResult_BouseiID_NG}")
+                    self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+                    self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
+                    self.InspectionResult_BouseiID_NG_int = list_to_16bit_int(self.InspectionResult_BouseiID_NG)
 
-                        #Emit the inspection result and serial number to holding registers
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                        print("Inspection Result Tape ID Emitted")
-                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
-                        time.sleep(0.5)
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                        print("0 State Code Emitted, ready for next instruction")
+                    print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
+                    print(f"Inspection Result Bousei OK ID: {self.InspectionResult_BouseiID_OK}")
+                    print(f"Inspection Result Bousei NG ID: {self.InspectionResult_BouseiID_NG}")
 
-                    
-                        
-
-                # if self.inspection_config.doInspection is True:
-                #     self.inspection_config.doInspection = False
-
-                #     if self.inspection_config.kensainNumber is None or self.inspection_config.kensainNumber == "":
-                #         print("No Kensain Number Input")
-                #         continue
-                    
-                #     if self.InspectionTimeStart is not None:
-                #         if time.time() - self.InspectionTimeStart > self.InspectionWaitTime or self.firstTimeInspection is True:
-
-                #             # # Do the inspection
-                #             for i in range(len(self.InspectionImages)):
-                #                 #Do YOLO inference to check whether part exist
-
-                #                 print(f"Part {i+1} Inference Start")
-
-                #                 #if part exists, do another inference to check whether the part is positioned correctly
-
-
-
-
-
-                #                 # print(self.InspectionResult_Status[i])
-                #                 # print(self.InspectionResult_DetectionID[i])
-
-                #                 if self.InspectionResult_Status[i] == "OK":
-                #                     self.inspection_config.current_numofPart[self.inspection_config.widget][0] += 1
-                #                     self.inspection_config.today_numofPart[self.inspection_config.widget][0] += 1
-                #                     self.InspectionStatus[i] = "OK"
-
-                #                 elif self.InspectionResult_Status[i] == "NG":
-                #                     self.inspection_config.current_numofPart[self.inspection_config.widget][1] += 1
-                #                     self.inspection_config.today_numofPart[self.inspection_config.widget][1] += 1
-                #                     self.InspectionStatus[i] = "NG"
-
-                #                 self.save_result_database(partname = self.widget_dir_map[self.inspection_config.widget],
-                #                     numofPart = self.inspection_config.today_numofPart[self.inspection_config.widget], 
-                #                     currentnumofPart = self.inspection_config.current_numofPart[self.inspection_config.widget],
-                #                     deltaTime = 0.0,
-                #                     kensainName = self.inspection_config.kensainNumber, 
-                #                     status = self.InspectionResult_Status[i], 
-                #                     NGreason = self.InspectionResult_NGReason[i],
-                #                     PPMS = "PPMS")
-
-                #                 self.hoodFR_InspectionStatus.emit(self.InspectionStatus)
-
-                #             self.save_image_result(self.part1Crop, self.InspectionImages[0], self.InspectionResult_Status[0], True, "P1")
-                #             self.save_image_result(self.part2Crop, self.InspectionImages[1], self.InspectionResult_Status[1], True, "P2")
-                #             self.save_image_result(self.part3Crop, self.InspectionImages[2], self.InspectionResult_Status[2], True, "P3")
-                #             self.save_image_result(self.part4Crop, self.InspectionImages[3], self.InspectionResult_Status[3], True, "P4")
-                #             self.save_image_result(self.part5Crop, self.InspectionImages[4], self.InspectionResult_Status[4], True, "P5")
-
-                #             self.InspectionImages[0] = self.downSampling(self.InspectionImages[0], width=1701, height=121)
-                #             self.InspectionImages[1] = self.downSampling(self.InspectionImages[1], width=1701, height=121)
-                #             self.InspectionImages[2] = self.downSampling(self.InspectionImages[2], width=1701, height=121)
-                #             self.InspectionImages[3] = self.downSampling(self.InspectionImages[3], width=1701, height=121)
-                #             self.InspectionImages[4] = self.downSampling(self.InspectionImages[4], width=1701, height=121)
-
-                #             print("Inspection Finished")
-                #             #Remember that list is mutable
-
-                #             self.part1Cam.emit(self.converQImageRGB(self.InspectionImages[0]))
-                #             self.part2Cam.emit(self.converQImageRGB(self.InspectionImages[1]))
-                #             self.part3Cam.emit(self.converQImageRGB(self.InspectionImages[2]))
-                #             self.part4Cam.emit(self.converQImageRGB(self.InspectionImages[3]))
-                #             self.part5Cam.emit(self.converQImageRGB(self.InspectionImages[4]))
-
-                #             # self.hoodFR_InspectionStatus.emit(self.InspectionStatus)
+                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
+                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
+                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
+                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
+                    print("Inspection Result Tape ID Emitted")
+                    # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
+                    self.P668307UA0A_InspectionStatus.emit(self.InspectionStatus)
+                    time.sleep(10)
+                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
+                    print("0 State Code Emitted, ready for next instruction")
 
                 self.today_numofPart_signal.emit(self.inspection_config.today_numofPart)
                 self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
@@ -837,7 +709,16 @@ class InspectionThread(QThread):
     def save_image(self, image):
         dir = "aikensa/inspection/" + self.widget_dir_map[self.inspection_config.widget]
         os.makedirs(dir, exist_ok=True)
-        cv2.imwrite(dir + "/" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".png", image)
+        base_filename = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{base_filename}.png"
+        filepath = os.path.join(dir, filename)
+        counter = 1
+        # If file exists, add a number suffix
+        while os.path.exists(filepath):
+            filename = f"{base_filename}_{counter}.png"
+            filepath = os.path.join(dir, filename)
+            counter += 1
+        cv2.imwrite(filepath, image)
 
     def save_image_hole(self, image, BGR = True, id=None):
         if BGR:

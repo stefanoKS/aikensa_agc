@@ -293,7 +293,7 @@ class AIKensa(QMainWindow):
 
     def _inspectionStatusText(self, inspectionStatus):
 
-        label_names = ["StatusP1", "StatusP2", "StatusP3", "StatusP4", "StatusP5", "StatusP6", "StatusP7", "StatusP8", "StatusP9", "StatusP10"]
+        label_names = ["StatusP1", "StatusP2", "StatusP3", "StatusP4", "StatusP5"]
         for i, status in enumerate(inspectionStatus):
             widget = self.stackedWidget.widget(5)
             label = widget.findChild(QLabel, label_names[i])

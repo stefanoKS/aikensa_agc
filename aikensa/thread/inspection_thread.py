@@ -476,10 +476,14 @@ class InspectionThread(QThread):
 
                     for i in range(len(self.InspectionImages)):
                         image = self.InspectionImages[i]
+                        if i < 5:
+                            image = cv2.rotate(image, cv2.ROTATE_180)
                         print(f"Part {i+1} Image: {image is not None}")
+
+
                         if image is not None:
                             # Do YOLO inference to check whether part exists
-                            _ = self.P668307UA0A_kensaModel(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), stream=True, verbose=False)
+                            _ = self.P668307UA0A_kensaModel(image, stream=True, verbose=False, imgsz = 128)
                             self.InspectionResult_DetectionID[i] = list(_)[0].probs.data.argmax().item()
                             print (f"Part {i+1} Detection ID: {self.InspectionResult_DetectionID[i]}")
                             #save image too
@@ -492,7 +496,7 @@ class InspectionThread(QThread):
 
                             #remap the detection ID like this: 
                             # {0: 'NOPART' into 1, 1: 'NURIWASURE' into 1, 2: 'OK' into 0} -> so Basically if its 2 its 0, others will be 1
-                            self.InspectionResult_DetectionID[i] = 1 if self.InspectionResult_DetectionID[i] != 2 else 0
+                            self.InspectionResult_DetectionID[i] = 0 if self.InspectionResult_DetectionID[i] != 2 else 1
                             print(f"Part {i+1} Remapped Detection ID: {self.InspectionResult_DetectionID[i]}")
 
                     # self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]

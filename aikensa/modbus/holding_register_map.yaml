@@ -58,6 +58,7 @@
 86: IV4_KensaResults_NG
 
 100: InstructionCode
+101: TurnOffCommand
 
 # To be read by PLC
 

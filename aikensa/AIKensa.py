@@ -48,6 +48,9 @@ class AIKensa(QMainWindow):
         self.modbusThread.holdingUpdated.connect(self.inspection_thread.on_holding_update)
         self.modbusThread.start()
 
+        #start inspection thread
+        self.inspection_thread.start()
+
         # Starting up the threads
         self.calibration_thread = CalibrationThread(CalibrationConfig())
 

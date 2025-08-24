@@ -187,6 +187,7 @@ class InspectionThread(QThread):
         self.serialNumber_back = None
         self.InstructionCode = None
         self.InstructionCode_prev = None
+        self.TurnOffCommand = False
 
         # "Read mysql id and password from yaml file"
         with open("aikensa/mysql/id.yaml") as file:
@@ -207,6 +208,7 @@ class InspectionThread(QThread):
         self.serialNumber_front = reg_dict.get(62, 0)
         self.serialNumber_back  = reg_dict.get(63, 0)
         self.InstructionCode    = reg_dict.get(100, 0)
+        self.TurnOffCommand   = reg_dict.get(101, 0)
 
         # print(f"Part Number: {self.partNumber}")
         # print(f"Serial Number Front: {self.serialNumber_front}")
@@ -534,6 +536,11 @@ class InspectionThread(QThread):
                 self.P668307UA0A_InspectionStatus.emit(self.InspectionStatus)
 
                 self.msleep(5)
+
+
+            if self.TurnOffCommand == 1:
+                #turn pc off
+                os.system("shutdown /s /t 1")
 
         self.msleep(5)
 

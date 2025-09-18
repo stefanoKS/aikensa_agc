@@ -28,14 +28,14 @@
      <rect>
       <x>80</x>
       <y>210</y>
-      <width>231</width>
-      <height>101</height>
+      <width>391</width>
+      <height>211</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>15</pointsize>
+      <pointsize>25</pointsize>
      </font>
     </property>
     <property name="styleSheet">

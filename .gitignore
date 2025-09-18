@@ -177,4 +177,4 @@ cython_debug/
 ./aikensa/training*
 ./aikensa/training/*
 ./aikensa/inspection/*
-./aikensa/inspection
+./aikensa/inspection*

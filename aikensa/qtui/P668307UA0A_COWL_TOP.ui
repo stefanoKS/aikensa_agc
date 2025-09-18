@@ -9,7 +9,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1280</width>
+    <width>1365</width>
     <height>800</height>
    </rect>
   </property>
@@ -54,14 +54,14 @@
      <rect>
       <x>110</x>
       <y>20</y>
-      <width>201</width>
+      <width>241</width>
       <height>31</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>15</pointsize>
+      <pointsize>18</pointsize>
       <weight>75</weight>
       <bold>true</bold>
      </font>
@@ -79,9 +79,9 @@
    <widget class="QFrame" name="frame">
     <property name="geometry">
      <rect>
-      <x>380</x>
+      <x>520</x>
       <y>120</y>
-      <width>531</width>
+      <width>391</width>
       <height>611</height>
      </rect>
     </property>
@@ -426,15 +426,15 @@
     <property name="geometry">
      <rect>
       <x>920</x>
-      <y>690</y>
-      <width>211</width>
-      <height>41</height>
+      <y>660</y>
+      <width>301</width>
+      <height>71</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>14</pointsize>
+      <pointsize>20</pointsize>
      </font>
     </property>
     <property name="styleSheet">
@@ -510,7 +510,7 @@
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>15</pointsize>
+      <pointsize>18</pointsize>
       <weight>75</weight>
       <bold>true</bold>
      </font>
@@ -528,7 +528,7 @@
    <widget class="QLabel" name="partlabel_5">
     <property name="geometry">
      <rect>
-      <x>430</x>
+      <x>460</x>
       <y>20</y>
       <width>151</width>
       <height>31</height>
@@ -555,7 +555,7 @@
    <widget class="QLabel" name="partlabel_6">
     <property name="geometry">
      <rect>
-      <x>330</x>
+      <x>360</x>
       <y>20</y>
       <width>91</width>
       <height>31</height>
@@ -582,16 +582,16 @@
    <widget class="QPushButton" name="InspectButton">
     <property name="geometry">
      <rect>
-      <x>30</x>
-      <y>470</y>
-      <width>331</width>
-      <height>71</height>
+      <x>20</x>
+      <y>630</y>
+      <width>401</width>
+      <height>111</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
+      <pointsize>29</pointsize>
       <weight>75</weight>
       <italic>false</italic>
       <bold>true</bold>
@@ -615,7 +615,7 @@ Inspect</string>
    <widget class="QLabel" name="partlabel_7">
     <property name="geometry">
      <rect>
-      <x>420</x>
+      <x>450</x>
       <y>60</y>
       <width>211</width>
       <height>31</height>
@@ -642,7 +642,7 @@ Inspect</string>
    <widget class="QLabel" name="partlabel_8">
     <property name="geometry">
      <rect>
-      <x>320</x>
+      <x>350</x>
       <y>60</y>
       <width>101</width>
       <height>31</height>
@@ -801,16 +801,16 @@ NG Parts:</string>
    <widget class="QLabel" name="status_furyou">
     <property name="geometry">
      <rect>
-      <x>320</x>
-      <y>420</y>
-      <width>41</width>
-      <height>31</height>
+      <x>430</x>
+      <y>540</y>
+      <width>71</width>
+      <height>71</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
+      <pointsize>20</pointsize>
       <weight>75</weight>
       <bold>true</bold>
       <underline>false</underline>
@@ -858,16 +858,16 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QLabel" name="status_kansei">
     <property name="geometry">
      <rect>
-      <x>320</x>
-      <y>390</y>
-      <width>41</width>
-      <height>31</height>
+      <x>430</x>
+      <y>480</y>
+      <width>71</width>
+      <height>61</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
+      <pointsize>20</pointsize>
       <weight>75</weight>
       <bold>true</bold>
       <underline>false</underline>
@@ -886,26 +886,26 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QLabel" name="label_11">
     <property name="geometry">
      <rect>
-      <x>20</x>
-      <y>265</y>
-      <width>141</width>
-      <height>41</height>
+      <x>10</x>
+      <y>260</y>
+      <width>231</width>
+      <height>91</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
+      <pointsize>26</pointsize>
       <weight>50</weight>
       <bold>false</bold>
       <underline>false</underline>
      </font>
     </property>
     <property name="styleSheet">
-     <string notr="true">color: rgb(238, 238, 236);</string>
+     <string notr="true">background-color: rgb(53, 132, 228);</string>
     </property>
     <property name="text">
-     <string>完成品：</string>
+     <string>完成品/lot：</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignCenter</set>
@@ -914,10 +914,10 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QPushButton" name="furyou_plus_10">
     <property name="geometry">
      <rect>
-      <x>240</x>
-      <y>320</y>
-      <width>41</width>
-      <height>21</height>
+      <x>410</x>
+      <y>360</y>
+      <width>51</width>
+      <height>51</height>
      </rect>
     </property>
     <property name="font">
@@ -935,10 +935,10 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QPushButton" name="kansei_plus_10">
     <property name="geometry">
      <rect>
-      <x>240</x>
-      <y>265</y>
-      <width>41</width>
-      <height>21</height>
+      <x>410</x>
+      <y>260</y>
+      <width>51</width>
+      <height>51</height>
      </rect>
     </property>
     <property name="font">
@@ -956,10 +956,10 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QLabel" name="label_12">
     <property name="geometry">
      <rect>
-      <x>165</x>
-      <y>380</y>
-      <width>201</width>
-      <height>81</height>
+      <x>185</x>
+      <y>470</y>
+      <width>321</width>
+      <height>151</height>
      </rect>
     </property>
     <property name="font">
@@ -984,10 +984,10 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QPushButton" name="kansei_plus">
     <property name="geometry">
      <rect>
-      <x>310</x>
-      <y>265</y>
-      <width>41</width>
-      <height>21</height>
+      <x>460</x>
+      <y>260</y>
+      <width>51</width>
+      <height>51</height>
      </rect>
     </property>
     <property name="font">
@@ -1005,16 +1005,16 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QLabel" name="current_furyou">
     <property name="geometry">
      <rect>
-      <x>170</x>
-      <y>320</y>
-      <width>61</width>
-      <height>41</height>
+      <x>240</x>
+      <y>360</y>
+      <width>171</width>
+      <height>91</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
+      <pointsize>31</pointsize>
       <weight>75</weight>
       <bold>true</bold>
       <underline>false</underline>
@@ -1034,26 +1034,26 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QLabel" name="label_13">
     <property name="geometry">
      <rect>
-      <x>20</x>
-      <y>320</y>
-      <width>141</width>
-      <height>41</height>
+      <x>10</x>
+      <y>360</y>
+      <width>231</width>
+      <height>91</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
+      <pointsize>26</pointsize>
       <weight>50</weight>
       <bold>false</bold>
       <underline>false</underline>
      </font>
     </property>
     <property name="styleSheet">
-     <string notr="true">color: rgb(238, 238, 236);</string>
+     <string notr="true">background-color: rgb(224, 27, 36);</string>
     </property>
     <property name="text">
-     <string>不良品：</string>
+     <string>不良品/lot：</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignCenter</set>
@@ -1062,10 +1062,10 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QLabel" name="label_14">
     <property name="geometry">
      <rect>
-      <x>170</x>
-      <y>390</y>
-      <width>81</width>
-      <height>61</height>
+      <x>190</x>
+      <y>480</y>
+      <width>121</width>
+      <height>131</height>
      </rect>
     </property>
     <property name="font">
@@ -1082,7 +1082,7 @@ background-color: rgb(238, 238, 236);</string>
 background-color: rgb(38, 162, 105);</string>
     </property>
     <property name="text">
-     <string>本日合計</string>
+     <string>本日累計</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignCenter</set>
@@ -1091,10 +1091,10 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QPushButton" name="furyou_minus_10">
     <property name="geometry">
      <rect>
-      <x>240</x>
-      <y>345</y>
-      <width>41</width>
-      <height>21</height>
+      <x>410</x>
+      <y>410</y>
+      <width>51</width>
+      <height>41</height>
      </rect>
     </property>
     <property name="font">
@@ -1112,16 +1112,16 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QLabel" name="current_kansei">
     <property name="geometry">
      <rect>
-      <x>170</x>
-      <y>265</y>
-      <width>61</width>
-      <height>41</height>
+      <x>240</x>
+      <y>260</y>
+      <width>171</width>
+      <height>91</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
+      <pointsize>31</pointsize>
       <weight>75</weight>
       <bold>true</bold>
       <underline>false</underline>
@@ -1141,16 +1141,16 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QPushButton" name="counterReset">
     <property name="geometry">
      <rect>
-      <x>30</x>
-      <y>380</y>
-      <width>121</width>
-      <height>81</height>
+      <x>20</x>
+      <y>530</y>
+      <width>161</width>
+      <height>91</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>10</pointsize>
+      <pointsize>14</pointsize>
       <weight>75</weight>
       <italic>false</italic>
       <bold>true</bold>
@@ -1173,16 +1173,16 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QLabel" name="label_15">
     <property name="geometry">
      <rect>
-      <x>250</x>
-      <y>390</y>
-      <width>71</width>
-      <height>31</height>
+      <x>320</x>
+      <y>480</y>
+      <width>101</width>
+      <height>61</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>11</pointsize>
+      <pointsize>20</pointsize>
       <weight>50</weight>
       <bold>false</bold>
       <underline>false</underline>
@@ -1201,10 +1201,10 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QPushButton" name="furyou_minus">
     <property name="geometry">
      <rect>
-      <x>310</x>
-      <y>345</y>
-      <width>41</width>
-      <height>21</height>
+      <x>460</x>
+      <y>410</y>
+      <width>51</width>
+      <height>41</height>
      </rect>
     </property>
     <property name="font">
@@ -1222,16 +1222,16 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QLabel" name="label_16">
     <property name="geometry">
      <rect>
-      <x>250</x>
-      <y>420</y>
-      <width>71</width>
-      <height>31</height>
+      <x>320</x>
+      <y>540</y>
+      <width>101</width>
+      <height>71</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>11</pointsize>
+      <pointsize>20</pointsize>
       <weight>50</weight>
       <bold>false</bold>
       <underline>false</underline>
@@ -1250,10 +1250,10 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QPushButton" name="kansei_minus">
     <property name="geometry">
      <rect>
-      <x>310</x>
-      <y>290</y>
-      <width>41</width>
-      <height>21</height>
+      <x>460</x>
+      <y>310</y>
+      <width>51</width>
+      <height>41</height>
      </rect>
     </property>
     <property name="font">
@@ -1271,10 +1271,10 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QPushButton" name="kansei_minus_10">
     <property name="geometry">
      <rect>
-      <x>240</x>
-      <y>290</y>
-      <width>41</width>
-      <height>21</height>
+      <x>410</x>
+      <y>310</y>
+      <width>51</width>
+      <height>41</height>
      </rect>
     </property>
     <property name="font">
@@ -1292,10 +1292,10 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QPushButton" name="furyou_plus">
     <property name="geometry">
      <rect>
-      <x>310</x>
-      <y>320</y>
-      <width>41</width>
-      <height>21</height>
+      <x>460</x>
+      <y>360</y>
+      <width>51</width>
+      <height>51</height>
      </rect>
     </property>
     <property name="font">
@@ -1313,16 +1313,16 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QLabel" name="label_ppms">
     <property name="geometry">
      <rect>
-      <x>20</x>
-      <y>170</y>
-      <width>141</width>
-      <height>51</height>
+      <x>10</x>
+      <y>130</y>
+      <width>211</width>
+      <height>71</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
+      <pointsize>26</pointsize>
       <weight>50</weight>
       <bold>false</bold>
       <underline>false</underline>
@@ -1341,11 +1341,16 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QLineEdit" name="ppms_number">
     <property name="geometry">
      <rect>
-      <x>170</x>
-      <y>170</y>
-      <width>191</width>
-      <height>61</height>
+      <x>230</x>
+      <y>120</y>
+      <width>291</width>
+      <height>91</height>
      </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>26</pointsize>
+     </font>
     </property>
     <property name="styleSheet">
      <string notr="true">background-color: rgb(255, 255, 255);</string>
@@ -1403,7 +1408,7 @@ background-color: rgb(238, 238, 236);</string>
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1280</width>
+     <width>1365</width>
      <height>22</height>
     </rect>
    </property>

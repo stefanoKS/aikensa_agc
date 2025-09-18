@@ -127,16 +127,16 @@ class InspectionThread(QThread):
         self.planarizeTransform_temp = None
         self.planarizeTransform_temp_scaled = None
         
-        self.part1Crop_Pos = (295, 510)
-        self.part2Crop_Pos = (295, 740)
-        self.part3Crop_Pos = (295, 960)
-        self.part4Crop_Pos = (295, 1190)
-        self.part5Crop_Pos = (295, 1415)
-        self.part6Crop_Pos = (1560, 505)
-        self.part7Crop_Pos = (1560, 720)
-        self.part8Crop_Pos = (1560, 945)
-        self.part9Crop_Pos = (1565, 1173)
-        self.part10Crop_Pos = (1570, 1395)
+        self.part1Crop_Pos = (310, 515)
+        self.part2Crop_Pos = (316, 740)
+        self.part3Crop_Pos = (320, 960)
+        self.part4Crop_Pos = (325, 1190)
+        self.part5Crop_Pos = (330, 1415)
+        self.part6Crop_Pos = (1590, 493)
+        self.part7Crop_Pos = (1590, 720)
+        self.part8Crop_Pos = (1596, 945)
+        self.part9Crop_Pos = (1600, 1173)
+        self.part10Crop_Pos = (1605, 1395)
 
         self.partCrop_width_height = (150, 150)
 
@@ -416,119 +416,92 @@ class InspectionThread(QThread):
                     # Do Inference
 
 
-                # if self.inspection_config.doInspection is True:
-                #     self.inspection_config.doInspection = False
-                #     #Save images, time and part number to ./training_images
-                #     if not os.path.exists("./aikensa/training_images"):
-                #         os.makedirs("./aikensa/training_images")
-                #         #Use time for the file name
-                #     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                #     #save InspectionImages with cv2.write
-                #     self.InspectionImages[0] = self.part1Crop
-                #     self.InspectionImages[1] = self.part2Crop
-                #     self.InspectionImages[2] = self.part3Crop
-                #     self.InspectionImages[3] = self.part4Crop
-                #     self.InspectionImages[4] = self.part5Crop
-                #     self.InspectionImages[5] = self.part6Crop
-                #     self.InspectionImages[6] = self.part7Crop
-                #     self.InspectionImages[7] = self.part8Crop
-                #     self.InspectionImages[8] = self.part9Crop
-                #     self.InspectionImages[9] = self.part10Crop
-                    
-
-                    # for i, img in enumerate(self.InspectionImages):
-                    #     if img is not None:
-                    #         filename = f"./aikensa/training_images/part{i+1}_{timestamp}.jpg"
-                    #         cv2.imwrite(filename, img)
-                    #         print(f"Saved {filename}")
-
-
                 if self.InstructionCode == 0:
                     if self.InstructionCode_prev == 0:
-                        pass  # Skip, already processed
+                        print("State Code 0 Already Processed, Skipping")
                     else:
                         self.InstructionCode_prev = self.InstructionCode
 
-                    self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-                    self.InspectionResult_BouseiID_OK = [0, 0, 0, 0, 0]
-                    self.InspectionResult_BouseiID_NG = [0, 0, 0, 0, 0]
+                        self.InspectionResult_BouseiID_OK = [0, 0, 0, 0, 0]
+                        self.InspectionResult_BouseiID_NG = [0, 0, 0, 0, 0]
 
-                    self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                    self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
-                    self.InspectionResult_BouseiID_NG_int = list_to_16bit_int(self.InspectionResult_BouseiID_NG)
+                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+                        self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
+                        self.InspectionResult_BouseiID_NG_int = list_to_16bit_int(self.InspectionResult_BouseiID_NG)
 
-                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
-                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
-                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                    
-                    # print(f"Inspection Result Bousei OK ID: {self.InspectionResult_BouseiID_OK}")
-                    # print(f"Inspection Result Bousei NG ID: {self.InspectionResult_BouseiID_NG}")
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
+                        
+                        # print(f"Inspection Result Bousei OK ID: {self.InspectionResult_BouseiID_OK}")
+                        # print(f"Inspection Result Bousei NG ID: {self.InspectionResult_BouseiID_NG}")
 
-                    self.InspectionStatus = ["待機"] * 5
+                        self.InspectionStatus = ["待機"] * 5
 
                 if self.InstructionCode == 2:
                     if self.InstructionCode_prev == 2:
-                        pass
+                        print("State Code 2 Already Processed, Skipping")
                     else:
                         self.InstructionCode_prev = self.InstructionCode
 
-                    print("State Code 2 Received, Starting Inspection")
+                        print("State Code 2 Received, Starting Inspection")
 
-                    for i in range(len(self.InspectionImages)):
-                        image = self.InspectionImages[i]
-                        if i < 5:
-                            image = cv2.rotate(image, cv2.ROTATE_180)
-                        print(f"Part {i+1} Image: {image is not None}")
+                        for i in range(len(self.InspectionImages)):
+                            image = self.InspectionImages[i]
+                            if i < 5:
+                                image = cv2.rotate(image, cv2.ROTATE_180)
+                            print(f"Part {i+1} Image: {image is not None}")
 
+                            #AI INFER
+                            if image is not None:
+                                # Do YOLO inference to check whether part exists
+                                _ = self.P668307UA0A_kensaModel(image, stream=True, verbose=False, imgsz = 128)
+                                self.InspectionResult_DetectionID[i] = list(_)[0].probs.data.argmax().item()
+                                print (f"Part {i+1} Detection ID: {self.InspectionResult_DetectionID[i]}")
+                                #save image too
+                                self.save_image(image, self.InspectionResult_DetectionID[i])
 
-                        if image is not None:
-                            # Do YOLO inference to check whether part exists
-                            _ = self.P668307UA0A_kensaModel(image, stream=True, verbose=False, imgsz = 128)
-                            self.InspectionResult_DetectionID[i] = list(_)[0].probs.data.argmax().item()
-                            print (f"Part {i+1} Detection ID: {self.InspectionResult_DetectionID[i]}")
-                            #save image too
-                            self.save_image(image, self.InspectionResult_DetectionID[i])
+                                
+                                #Detection ID is as follows:
+                                # {0: 'NOPART', 1: 'NURIWASURE', 2: 'OK'}
+                                # If Detection ID is 2, then it is OK, otherwise it is NG
 
-                            
-                            #Detection ID is as follows:
-                            # {0: 'NOPART', 1: 'NURIWASURE', 2: 'OK'}
-                            # If Detection ID is 2, then it is OK, otherwise it is NG
+                                #remap the detection ID like this: 
+                                # {0: 'NOPART' into 1, 1: 'NURIWASURE' into 1, 2: 'OK' into 0} -> so Basically if its 2 its 0, others will be 1
+                                self.InspectionResult_DetectionID[i] = 0 if self.InspectionResult_DetectionID[i] != 2 else 1
+                                print(f"Part {i+1} Remapped Detection ID: {self.InspectionResult_DetectionID[i]}")
 
-                            #remap the detection ID like this: 
-                            # {0: 'NOPART' into 1, 1: 'NURIWASURE' into 1, 2: 'OK' into 0} -> so Basically if its 2 its 0, others will be 1
-                            self.InspectionResult_DetectionID[i] = 0 if self.InspectionResult_DetectionID[i] != 2 else 1
-                            print(f"Part {i+1} Remapped Detection ID: {self.InspectionResult_DetectionID[i]}")
+                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                        self.InspectionResult_BouseiID_OK = combine_by_and(self.InspectionResult_DetectionID)
+                        self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]
 
-                    # self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                    self.InspectionResult_BouseiID_OK = combine_by_and(self.InspectionResult_DetectionID)
-                    self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]
+                        for i in range (len(self.InspectionResult_BouseiID_OK)):
+                            if self.InspectionResult_BouseiID_OK[i] == 1:
+                                self.InspectionStatus[i] = "OK"
+                            elif self.InspectionResult_BouseiID_NG[i] == 1:
+                                self.InspectionStatus[i] = "NG"
 
-                    for i in range (len(self.InspectionResult_BouseiID_OK)):
-                        if self.InspectionResult_BouseiID_OK[i] == 1:
-                            self.InspectionStatus[i] = "OK"
-                        elif self.InspectionResult_BouseiID_NG[i] == 1:
-                            self.InspectionStatus[i] = "NG"
+                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+                        self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
+                        self.InspectionResult_BouseiID_NG_int = list_to_16bit_int(self.InspectionResult_BouseiID_NG)
 
-                    self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                    self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
-                    self.InspectionResult_BouseiID_NG_int = list_to_16bit_int(self.InspectionResult_BouseiID_NG)
+                        # print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
+                        # print(f"Inspection Result Bousei OK ID: {self.InspectionResult_BouseiID_OK}")
+                        # print(f"Inspection Result Bousei NG ID: {self.InspectionResult_BouseiID_NG}")
 
-                    print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                    print(f"Inspection Result Bousei OK ID: {self.InspectionResult_BouseiID_OK}")
-                    print(f"Inspection Result Bousei NG ID: {self.InspectionResult_BouseiID_NG}")
-
-                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
-                    self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
-                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                    print("Inspection Result Tape ID Emitted")
-                    # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
-                    self.P668307UA0A_InspectionStatus.emit(self.InspectionStatus)
-                    time.sleep(10)
-                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                    print("0 State Code Emitted, ready for next instruction")
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
+                        print("Inspection Result Tape ID Emitted")
+                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
+                        self.P668307UA0A_InspectionStatus.emit(self.InspectionStatus)
+                        time.sleep(0.1)
+                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
+                        print("0 State Code Emitted, ready for next instruction")
 
                 self.today_numofPart_signal.emit(self.inspection_config.today_numofPart)
                 self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
@@ -540,7 +513,7 @@ class InspectionThread(QThread):
 
             if self.TurnOffCommand == 1:
                 #turn pc off
-                os.system("shutdown /s /t 1")
+                os.system("shutdown now")
 
         self.msleep(5)
 
@@ -628,17 +601,13 @@ class InspectionThread(QThread):
         timestamp_date = str(timestamp_date)
         deltaTime = float(deltaTime)  # Ensure this is a float
         kensainName = str(kensainName)
-        detected_pitch_str = str(detected_pitch_str)
-        delta_pitch_str = str(delta_pitch_str)
-        total_length = float(total_length)  # Ensure this is a float
-        resultPitch = str(resultPitch)
         status = str(status)
         NGreason = str(NGreason)
 
         self.cursor.execute('''
-        INSERT INTO inspection_results (partname, numofPart, currentnumofPart, timestampHour, timestampDate, deltaTime, kensainName, detected_pitch, delta_pitch, total_length, resultpitch, status, NGreason)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, detected_pitch_str, delta_pitch_str, total_length, resultPitch, status, NGreason))
+        INSERT INTO inspection_results (partname, numofPart, currentnumofPart, timestampHour, timestampDate, deltaTime, kensainName, status, NGreason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, status, NGreason))
         self.conn.commit()
 
         # Update the totatl part number (Maybe the day has been changed)
@@ -646,11 +615,11 @@ class InspectionThread(QThread):
             self.inspection_config.today_numofPart[key] = self.get_last_entry_total_numofPart(value)
 
         #Also save to mysql cursor
-        self.mysql_cursor.execute('''
-        INSERT INTO inspection_results (partName, numofPart, currentnumofPart, timestampHour, timestampDate, deltaTime, kensainName, detected_pitch, delta_pitch, total_length, resultpitch, status, NGreason)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, detected_pitch_str, delta_pitch_str, total_length, resultPitch, status, NGreason))
-        self.mysql_conn.commit()
+        # self.mysql_cursor.execute('''
+        # INSERT INTO inspection_results (partName, numofPart, currentnumofPart, timestampHour, timestampDate, deltaTime, kensainName, status, NGreason)
+        # VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        # ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, status, NGreason))
+        # self.mysql_conn.commit()
 
     def get_last_entry_currentnumofPart(self, part_name):
         self.cursor.execute('''

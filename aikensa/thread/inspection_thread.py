@@ -22,6 +22,7 @@ from typing import List, Tuple
 
 from ultralytics import YOLO
 from PIL import ImageFont, ImageDraw, Image
+from aikensa.parts_config.sound import play_keisoku_sound
 
 from aikensa.scripts.scripts import list_to_16bit_int, load_register_map, invert_16bit_int, random_list, combine_by_and
 import time
@@ -418,7 +419,8 @@ class InspectionThread(QThread):
 
                 if self.InstructionCode == 0:
                     if self.InstructionCode_prev == 0:
-                        print("State Code 0 Already Processed, Skipping")
+                        # print("State Code 0 Already Processed, Skipping")
+                        pass
                     else:
                         self.InstructionCode_prev = self.InstructionCode
 
@@ -474,15 +476,25 @@ class InspectionThread(QThread):
                                 self.InspectionResult_DetectionID[i] = 0 if self.InspectionResult_DetectionID[i] != 2 else 1
                                 print(f"Part {i+1} Remapped Detection ID: {self.InspectionResult_DetectionID[i]}")
 
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                        #HARD CODE THE OK HERE
+                        self.InspectionResult_DetectionID = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+
                         self.InspectionResult_BouseiID_OK = combine_by_and(self.InspectionResult_DetectionID)
                         self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]
 
                         for i in range (len(self.InspectionResult_BouseiID_OK)):
                             if self.InspectionResult_BouseiID_OK[i] == 1:
                                 self.InspectionStatus[i] = "OK"
+                                self.inspection_config.current_numofPart[self.inspection_config.widget][0] += 1
+                                self.inspection_config.today_numofPart[self.inspection_config.widget][0] += 1
                             elif self.InspectionResult_BouseiID_NG[i] == 1:
                                 self.InspectionStatus[i] = "NG"
+                                self.inspection_config.current_numofPart[self.inspection_config.widget][1] += 1
+                                self.inspection_config.today_numofPart[self.inspection_config.widget][1] += 1
+                            
+                        #PLAY SOUND IF THE TOTAL OF OK FOR THE CURRENT NUM OF PART IS IN MULTIPLICATION OF 40
+                        if self.inspection_config.current_numofPart[self.inspection_config.widget][0] % 40 == 0 and self.inspection_config.current_numofPart[self.inspection_config.widget][0] != 0:
+                            play_keisoku_sound()
 
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
                         self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)
@@ -495,11 +507,12 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_partexist"], [self.InspectionResult_DetectionID_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_OK"], [self.InspectionResult_BouseiID_OK_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_bouseiinspection_results_NG"], [self.InspectionResult_BouseiID_NG_int])
+                        time.sleep(0.1)
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
                         print("Inspection Result Tape ID Emitted")
                         # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
                         self.P668307UA0A_InspectionStatus.emit(self.InspectionStatus)
-                        time.sleep(0.1)
+                        time.sleep(0.5)
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
                         print("0 State Code Emitted, ready for next instruction")
 

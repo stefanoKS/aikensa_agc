@@ -38,7 +38,7 @@ class CameraThread(QThread):
     def run(self):
         self.Tis = TIS()
         try:
-            self.Tis.open_device(self.serial, self.width, self.height, f"{self.fps}/1", SinkFormats.BGRA, False)
+            self.Tis.open_device(self.serial, self.width, self.height, f"{self.fps}/1", SinkFormats.BGRX, False, conversion="videoconvert ! video/x-raw,format=BGR")
             self.Tis.start_pipeline()
             # self.Tis.list_properties()
 
@@ -62,15 +62,15 @@ class CameraThread(QThread):
 
             # print(f"BlackLevel: {BlackLevel}, ExposureAuto: {ExposureAuto}, ExposureTime: {ExposureTime}, Gain: {Gain}, GainAuto: {GainAuto}")
             # print(f"WhiteBalanceAuto: {WhiteBalanceAuto}")
-            print(f"WhiteBalanceRed: {self.Tis.get_property('BalanceWhiteRed')}, WhiteBalanceBlue: {self.Tis.get_property('BalanceWhiteBlue')}, WhiteBalanceGreen: {self.Tis.get_property('BalanceWhiteGreen')}")
+            # print(f"WhiteBalanceRed: {self.Tis.get_property('BalanceWhiteRed')}, WhiteBalanceBlue: {self.Tis.get_property('BalanceWhiteBlue')}, WhiteBalanceGreen: {self.Tis.get_property('BalanceWhiteGreen')}")
 
             self.running = True
             while self.running:
                 if self.Tis.snap_image(0.1):
                     image = self.Tis.get_image()
                     if image is not None:
-                        self.new_frame.emit(image.copy())
-                time.sleep(0.01)
+                        self.new_frame.emit(image.copy())  # one copy, here
+
         except Exception as e:
             print(f"Error initializing camera pipeline: {e}")
             self.running = False

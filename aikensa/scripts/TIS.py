@@ -94,11 +94,13 @@ class TIS:
 
         # Query a pointer to the appsink, so we can assign the callback function.
         appsink = self.pipeline.get_by_name("sink")
-        appsink.set_property("max-buffers", 5)
+        appsink.set_property("max-buffers", 1)
         appsink.set_property("drop", True)
+        appsink.set_property("sync", False)
         appsink.set_property("emit-signals", True)
         appsink.set_property("enable-last-sample", True)
         appsink.connect('new-sample', self.__on_new_buffer)
+        
         self.appsink = appsink
 
     def __on_new_buffer(self, appsink):

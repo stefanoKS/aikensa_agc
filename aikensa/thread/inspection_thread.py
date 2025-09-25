@@ -218,7 +218,7 @@ class InspectionThread(QThread):
 
     @pyqtSlot(np.ndarray)
     def receive_frame(self, frame):
-        self.latest_frame = frame.copy()  
+        self.latest_frame = frame
 
     def run(self):
         #initialize the database
@@ -283,13 +283,15 @@ class InspectionThread(QThread):
 
 
         #print thread started
-        print("Inspection Thread Started")
+        # print("Inspection Thread Started")
         self.initialize_model()
-        print("AI Model Initialized")
+        # print("AI Model Initialized")
 
         # for key, value in self.widget_dir_map.items():
         #     self.inspection_config.current_numofPart[key] = self.get_last_entry_currentnumofPart(value)
         #     self.inspection_config.today_numofPart[key] = self.get_last_entry_total_numofPart(value)
+
+        last_seen_id = 0
 
         while self.running:
 
@@ -329,7 +331,11 @@ class InspectionThread(QThread):
 
 
                 if self.latest_frame is not None:
-                    self.camFrame = self.latest_frame
+                    cur_id = id(self.latest_frame)
+                    if cur_id != last_seen_id:
+                        last_seen_id = cur_id
+                        self.camFrame = self.latest_frame
+
                 else:
                     print("Camera 0 is not opened, creating placeholder image.")
                     self.camFrame = np.zeros((self.frame_height, self.frame_width, 3), dtype=np.uint8)
@@ -521,14 +527,14 @@ class InspectionThread(QThread):
             
                 self.P668307UA0A_InspectionStatus.emit(self.InspectionStatus)
 
-                self.msleep(5)
+                # self.msleep(5)
 
 
             if self.TurnOffCommand == 1:
                 #turn pc off
                 os.system("shutdown now")
 
-        self.msleep(5)
+        # self.msleep(5)
 
 
     def setCounterFalse(self):

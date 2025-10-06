@@ -122,7 +122,7 @@ class ModbusServerThread(QThread):
             try:
                 # 3 = function code for holding registers
                 self.context[0].setValues(3, start_addr, values)
-                _logger.info(f"Wrote HR[{start_addr}..{start_addr + len(values)-1}] = {values}")
+                # _logger.info(f"Wrote HR[{start_addr}..{start_addr + len(values)-1}] = {values}")
             except Exception as err:
                 _logger.error(f"Failed to write HR[{start_addr}..]: {err}")
 

@@ -28,6 +28,7 @@ from ultralytics import YOLO
 from PIL import ImageFont, ImageDraw, Image
 
 from aikensa.scripts.scripts import list_to_16bit_int, load_register_map, invert_16bit_int, random_list
+from aikensa.scripts.scripts_img_processing import crop_parts
 
 @dataclass
 class InspectionConfig:
@@ -165,12 +166,46 @@ class InspectionThread(QThread):
 
         self.qtWindowWidth = 1701
         self.qtWindowHeight = 109
+        
+        self.part_crops = None
 
-        self.part1Crop_YPos = 175
-        self.part2Crop_YPos = 480
-        self.part3Crop_YPos = 800
-        self.part4Crop_YPos = 1120
-        self.part5Crop_YPos = 1440
+        self.part1Crop_YPos = 280
+        self.part2Crop_YPos = 598
+        self.part3Crop_YPos = 915
+        self.part4Crop_YPos = 1240
+        self.part5Crop_YPos = 1555
+
+        self.J30LH_cropstart = 50
+        self.J30LH_part_height_offset = 205
+        self.J30LH_part1_Crop_YPos = 280
+        self.J30LH_part2_Crop_YPos = 598
+        self.J30LH_part3_Crop_YPos = 915
+        self.J30LH_part4_Crop_YPos = 1240
+        self.J30LH_part5_Crop_YPos = 1555
+
+        self.J30RH_cropstart = 50
+        self.J30RH_part_height_offset = 205
+        self.J30RH_part1_Crop_YPos = 170
+        self.J30RH_part2_Crop_YPos = 488
+        self.J30RH_part3_Crop_YPos = 805
+        self.J30RH_part4_Crop_YPos = 1130
+        self.J30RH_part5_Crop_YPos = 1445
+
+        self.J59JLH_cropstart = 50
+        self.J59LH_part_height_offset = 205
+        self.J59JLH_part1_Crop_YPos = 280
+        self.J59JLH_part2_Crop_YPos = 598
+        self.J59JLH_part3_Crop_YPos = 915
+        self.J59JLH_part4_Crop_YPos = 1240
+        self.J59JLH_part5_Crop_YPos = 1555
+
+        self.J59JRH_cropstart = 50
+        self.J59LH_part_height_offset = 205
+        self.J59JRH_part1_Crop_YPos = 280
+        self.J59JRH_part2_Crop_YPos = 598
+        self.J59JRH_part3_Crop_YPos = 915
+        self.J59JRH_part4_Crop_YPos = 1240
+        self.J59JRH_part5_Crop_YPos = 1555
 
         self.part1Crop_YPos_scaled = int(self.part1Crop_YPos//self.scale_factor)
         self.part2Crop_YPos_scaled = int(self.part2Crop_YPos//self.scale_factor)
@@ -211,7 +246,10 @@ class InspectionThread(QThread):
         self.InspectionStatus = [None]*5
 
         self.widget_dir_map = {
-            5: "AGC_Line"
+            5: "J59JRH",
+            6: "J59JLH",
+            7: "J30RH",
+            8: "J30LH",
         }
 
         self.InspectionWaitTime = 5.0
@@ -237,12 +275,15 @@ class InspectionThread(QThread):
 
         self.holding_register_path = "./aikensa/modbus/holding_register_map.yaml"
         self.holding_register_map = load_register_map(self.holding_register_path)
+        self.camera_angle = 180.65
+        self.last_valid_part_number = 0
 
 
     @pyqtSlot(dict)
     def on_holding_update(self, reg_dict):
         # Only called whenever the Modbus thread emits new data.
         self.partNumber = reg_dict.get(50, 0)
+        # self.partNumber = 8 #For testing only
         self.serialNumber_front = reg_dict.get(62, 0)
         self.serialNumber_back  = reg_dict.get(63, 0)
         self.InstructionCode    = reg_dict.get(100, 0)
@@ -264,6 +305,9 @@ class InspectionThread(QThread):
         else:
             print(f"Initializing camera with ID {camID}")
             self.cap_cam = initialize_camera(camID)
+            #find the center of the image
+            self.center_image = (self.cap_cam.get(cv2.CAP_PROP_FRAME_WIDTH) // 2, self.cap_cam.get(cv2.CAP_PROP_FRAME_HEIGHT) // 2)
+
             if not self.cap_cam.isOpened():
                 print(f"Failed to open camera with ID {camID}")
                 self.cap_cam = None
@@ -308,39 +352,39 @@ class InspectionThread(QThread):
         self.conn.commit()
 
 
-        #Initialize connection to mysql server if available
-        try:
-            self.mysql_conn = mysql.connector.connect(
-                host=self.mysqlHost,
-                user=self.mysqlID,
-                password=self.mysqlPassword,
-                port=self.mysqlHostPort,
-                database="AIKENSAresults"
-            )
-            print(f"Connected to MySQL database at {self.mysqlHost}")
-        except Exception as e:
-            print(f"Error connecting to MySQL database: {e}")
-            self.mysql_conn = None
+        # #Initialize connection to mysql server if available
+        # try:
+        #     self.mysql_conn = mysql.connector.connect(
+        #         host=self.mysqlHost,
+        #         user=self.mysqlID,
+        #         password=self.mysqlPassword,
+        #         port=self.mysqlHostPort,
+        #         database="AIKENSAresults"
+        #     )
+        #     print(f"Connected to MySQL database at {self.mysqlHost}")
+        # except Exception as e:
+        #     print(f"Error connecting to MySQL database: {e}")
+        #     self.mysql_conn = None
 
-        #try adding data to the schema in mysql
-        if self.mysql_conn is not None:
-            self.mysql_cursor = self.mysql_conn.cursor()
-            self.mysql_cursor.execute('''
-                CREATE TABLE IF NOT EXISTS AGC_tapehari_inspection_results (
-                    id INTEGER PRIMARY KEY AUTO_INCREMENT,
-                    partName TEXT,
-                    numofPart TEXT,
-                    currentnumofPart TEXT,
-                    timestampHour TEXT,
-                    timestampDate TEXT,
-                    deltaTime REAL,
-                    kensainName TEXT,
-                    status TEXT,
-                    NGreason TEXT,
-                    PPMS TEXT
-                )
-            ''')
-            self.mysql_conn.commit()
+        # #try adding data to the schema in mysql
+        # if self.mysql_conn is not None:
+        #     self.mysql_cursor = self.mysql_conn.cursor()
+        #     self.mysql_cursor.execute('''
+        #         CREATE TABLE IF NOT EXISTS AGC_tapehari_inspection_results (
+        #             id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        #             partName TEXT,
+        #             numofPart TEXT,
+        #             currentnumofPart TEXT,
+        #             timestampHour TEXT,
+        #             timestampDate TEXT,
+        #             deltaTime REAL,
+        #             kensainName TEXT,
+        #             status TEXT,
+        #             NGreason TEXT,
+        #             PPMS TEXT
+        #         )
+        #     ''')
+        #     self.mysql_conn.commit()
 
 
         #print thread started
@@ -358,81 +402,49 @@ class InspectionThread(QThread):
 
         while self.running:
 
-
             if self.inspection_config.widget == 0:
                 self.inspection_config.cameraID = -1
 
-            if self.inspection_config.widget == 5:
-                if self.inspection_config.furyou_plus or self.inspection_config.furyou_minus or self.inspection_config.kansei_plus or self.inspection_config.kansei_minus or self.inspection_config.furyou_plus_10 or self.inspection_config.furyou_minus_10 or self.inspection_config.kansei_plus_10 or self.inspection_config.kansei_minus_10:
-                    self.inspection_config.current_numofPart[self.inspection_config.widget], self.inspection_config.today_numofPart[self.inspection_config.widget] = self.manual_adjustment(
-                        self.inspection_config.current_numofPart[self.inspection_config.widget], self.inspection_config.today_numofPart[self.inspection_config.widget],
-                        self.inspection_config.furyou_plus, 
-                        self.inspection_config.furyou_minus, 
-                        self.inspection_config.furyou_plus_10, 
-                        self.inspection_config.furyou_minus_10, 
-                        self.inspection_config.kansei_plus, 
-                        self.inspection_config.kansei_minus,
-                        self.inspection_config.kansei_plus_10,
-                        self.inspection_config.kansei_minus_10)
-                    print("Manual Adjustment Done")
-                    print(f"Furyou Plus: {self.inspection_config.furyou_plus}")
-                    print(f"Furyou Minus: {self.inspection_config.furyou_minus}")
-                    print(f"Kansei Plus: {self.inspection_config.kansei_plus}")
-                    print(f"Kansei Minus: {self.inspection_config.kansei_minus}")
-                    print(f"Furyou Plus 10: {self.inspection_config.furyou_plus_10}")
-                    print(f"Furyou Minus 10: {self.inspection_config.furyou_minus_10}")
-                    print(f"Kansei Plus 10: {self.inspection_config.kansei_plus_10}")
-                    print(f"Kansei Minus 10: {self.inspection_config.kansei_minus_10}")
+            if self.partNumber is not None:
+                self.handle_part_number_update()
 
-                if self.inspection_config.counterReset is True:
-                    self.inspection_config.current_numofPart[self.inspection_config.widget] = [0, 0]
-                    self.inspection_config.counterReset = False
-                    self.save_result_database(partname = self.widget_dir_map[self.inspection_config.widget],
-                            numofPart = self.inspection_config.today_numofPart[self.inspection_config.widget],
-                            currentnumofPart = [0, 0], 
-                            deltaTime = 0.0,
-                            kensainName = self.inspection_config.kensainNumber, 
-                            status = "COUNTERRESET",
-                            NGreason = "COUNTERRESET",
-                            PPMS = "COUNTERRESET")  
-
-                #initialize single camera with id 0
-
+            if self.inspection_config.widget in [0, 5, 6, 7, 8]:
+                # render the camera first
                 if self.cap_cam is None:
                     print("Camera 0 is not initialized, skipping frame capture.")
                     continue
                 # Read the frame from the camera
                 _, self.camFrame = self.cap_cam.read()
+                angle = self.camera_angle
+                M = cv2.getRotationMatrix2D(self.center_image, angle, 1.0)  # 1.0 is the scale factor
+                self.camFrame = cv2.warpAffine(self.camFrame, M, (self.camFrame.shape[1], self.camFrame.shape[0]))
 
-                self.camFrame = cv2.rotate(self.camFrame, cv2.ROTATE_180)
+            #J30 RH Inspection
+            if self.inspection_config.widget == 7:
 
-                self.part1Crop = self.camFrame[int(self.part1Crop_YPos) : int((self.part1Crop_YPos + self.part_height_offset)), 0 : int(self.camFrame.shape[1])]
-                self.part2Crop = self.camFrame[int(self.part2Crop_YPos) : int((self.part2Crop_YPos + self.part_height_offset)), 0 : int(self.camFrame.shape[1])]
-                self.part3Crop = self.camFrame[int(self.part3Crop_YPos) : int((self.part3Crop_YPos + self.part_height_offset)), 0 : int(self.camFrame.shape[1])]
-                self.part4Crop = self.camFrame[int(self.part4Crop_YPos) : int((self.part4Crop_YPos + self.part_height_offset)), 0 : int(self.camFrame.shape[1])]
-                self.part5Crop = self.camFrame[int(self.part5Crop_YPos) : int((self.part5Crop_YPos + self.part_height_offset)), 0 : int(self.camFrame.shape[1])]
+                self.handle_adjustments_and_counterreset()
 
-                if self.part1Crop is not None:
-                    self.part1Crop = self.downSampling(self.part1Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
-                    self.part1Cam.emit(self.convertQImage(self.part1Crop))
-                if self.part2Crop is not None:
-                    self.part2Crop = self.downSampling(self.part2Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
-                    self.part2Cam.emit(self.convertQImage(self.part2Crop))
-                if self.part3Crop is not None:
-                    self.part3Crop = self.downSampling(self.part3Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
-                    self.part3Cam.emit(self.convertQImage(self.part3Crop))
-                if self.part4Crop is not None:
-                    self.part4Crop = self.downSampling(self.part4Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
-                    self.part4Cam.emit(self.convertQImage(self.part4Crop))
-                if self.part5Crop is not None:
-                    self.part5Crop = self.downSampling(self.part5Crop, width = self.qtWindowWidth, height = self.qtWindowHeight)
-                    self.part5Cam.emit(self.convertQImage(self.part5Crop))
+                self.part_crops = crop_parts(
+                    img=self.camFrame,
+                    crop_start=int(self.J30RH_cropstart),
+                    crop_height=int(self.J30RH_part_height_offset),
+                    crop_y_positions=[
+                        int(self.J30RH_part1_Crop_YPos),
+                        int(self.J30RH_part2_Crop_YPos),
+                        int(self.J30RH_part3_Crop_YPos),
+                        int(self.J30RH_part4_Crop_YPos),
+                        int(self.J30RH_part5_Crop_YPos),
+                    ],
+                )
+                self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop = self.part_crops
 
-                    if self.firstTimeInspection is False:
-                        if self.inspection_config.doInspection is False:
-                            self.InspectionTimeStart = time.time()
-                            self.firstTimeInspection = True
-                            self.inspection_config.doInspection = True
+                self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+
+                if self.firstTimeInspection is False:
+                    if self.inspection_config.doInspection is False:
+                        self.InspectionTimeStart = time.time()
+                        self.firstTimeInspection = True
+                        self.inspection_config.doInspection = True
                 
                 self.partNumber_signal.emit(self.partNumber)
 
@@ -463,10 +475,8 @@ class InspectionThread(QThread):
                             cv2.imwrite(filename, img)
                             print(f"Saved {filename}")
 
-
-
-
                 if self.InstructionCode == 0:
+                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
                     if self.InstructionCode_prev == 0:
                         pass  # Skip, already processed
                     else:
@@ -504,6 +514,7 @@ class InspectionThread(QThread):
                         #wait
                         time.sleep(0.5)
 
+                # 1 = Set Inspection
                 if self.InstructionCode == 1:
                     if self.InstructionCode_prev == 1:
                         pass
@@ -511,7 +522,8 @@ class InspectionThread(QThread):
                         self.InstructionCode_prev = self.InstructionCode
 
                         self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-                        self.InspectionResult_SetID_OK = random_list(5) #Dummy values for testing
+                        # self.InspectionResult_SetID_OK = random_list(5) #Dummy values for testing
+                        self.InspectionResult_SetID_OK = [1, 1, 1, 1, 1]
                         self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]  # Invert the OK values for NG
                         
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
@@ -532,16 +544,36 @@ class InspectionThread(QThread):
                         print("Inspection Result Set ID Emitted")
                         # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
                         time.sleep(0.5)
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                        print("0 State Code Emitted, ready for next instruction")
+                        # self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
+                        # print("0 State Code Emitted, ready for next instruction")
 
+                        if not os.path.exists("./aikensa/training_images/set"):
+                            os.makedirs("./aikensa/training_images/set")
+                            #Use time for the file name
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        #save InspectionImages with cv2.write
+                        self.InspectionImages[0] = self.part1Crop
+                        self.InspectionImages[1] = self.part2Crop
+                        self.InspectionImages[2] = self.part3Crop
+                        self.InspectionImages[3] = self.part4Crop
+                        self.InspectionImages[4] = self.part5Crop
+
+                        for i, img in enumerate(self.InspectionImages):
+                            if img is not None:
+                                filename = f"./aikensa/training_images/set/part{i+1}_{timestamp}.jpg"
+                                cv2.imwrite(filename, img)
+                                print(f"Saved {filename}")
+
+
+                # 2 = Tape Inspection
                 if self.InstructionCode == 2:
                     if self.InstructionCode_prev == 2:
                         pass
                     else:
                         self.InstructionCode_prev = self.InstructionCode
                         self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-                        self.InspectionResult_TapeID_OK = random_list(5) #Dummy values for testing
+                        # self.InspectionResult_TapeID_OK = random_list(5) #Dummy values for testing
+                        self.InspectionResult_TapeID_OK = [1, 1, 1, 1, 1]
                         self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
 
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
@@ -562,92 +594,49 @@ class InspectionThread(QThread):
                         print("Inspection Result Tape ID Emitted")
                         # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
                         time.sleep(0.5)
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                        print("0 State Code Emitted, ready for next instruction")
+                        # self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
+                        # print("0 State Code Emitted, ready for next instruction")
+
+                        if not os.path.exists("./aikensa/training_images/tape"):
+                            os.makedirs("./aikensa/training_images/tape")
+                            #Use time for the file name
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        #save InspectionImages with cv2.write
+                        self.InspectionImages[0] = self.part1Crop
+                        self.InspectionImages[1] = self.part2Crop
+                        self.InspectionImages[2] = self.part3Crop
+                        self.InspectionImages[3] = self.part4Crop
+                        self.InspectionImages[4] = self.part5Crop
+
+                        for i, img in enumerate(self.InspectionImages):
+                            if img is not None:
+                                filename = f"./aikensa/training_images/tape/part{i+1}_{timestamp}.jpg"
+                                cv2.imwrite(filename, img)
+                                print(f"Saved {filename}")
                         
-
-
-
-
-                # if self.inspection_config.doInspection is True:
-                #     self.inspection_config.doInspection = False
-
-                #     if self.inspection_config.kensainNumber is None or self.inspection_config.kensainNumber == "":
-                #         print("No Kensain Number Input")
-                #         continue
-                    
-                #     if self.InspectionTimeStart is not None:
-                #         if time.time() - self.InspectionTimeStart > self.InspectionWaitTime or self.firstTimeInspection is True:
-
-                #             # # Do the inspection
-                #             for i in range(len(self.InspectionImages)):
-                #                 #Do YOLO inference to check whether part exist
-
-                #                 print(f"Part {i+1} Inference Start")
-
-                #                 #if part exists, do another inference to check whether the part is positioned correctly
-
-
-
-
-
-                #                 # print(self.InspectionResult_Status[i])
-                #                 # print(self.InspectionResult_DetectionID[i])
-
-                #                 if self.InspectionResult_Status[i] == "OK":
-                #                     self.inspection_config.current_numofPart[self.inspection_config.widget][0] += 1
-                #                     self.inspection_config.today_numofPart[self.inspection_config.widget][0] += 1
-                #                     self.InspectionStatus[i] = "OK"
-
-                #                 elif self.InspectionResult_Status[i] == "NG":
-                #                     self.inspection_config.current_numofPart[self.inspection_config.widget][1] += 1
-                #                     self.inspection_config.today_numofPart[self.inspection_config.widget][1] += 1
-                #                     self.InspectionStatus[i] = "NG"
-
-                #                 self.save_result_database(partname = self.widget_dir_map[self.inspection_config.widget],
-                #                     numofPart = self.inspection_config.today_numofPart[self.inspection_config.widget], 
-                #                     currentnumofPart = self.inspection_config.current_numofPart[self.inspection_config.widget],
-                #                     deltaTime = 0.0,
-                #                     kensainName = self.inspection_config.kensainNumber, 
-                #                     status = self.InspectionResult_Status[i], 
-                #                     NGreason = self.InspectionResult_NGReason[i],
-                #                     PPMS = "PPMS")
-
-                #                 self.hoodFR_InspectionStatus.emit(self.InspectionStatus)
-
-                #             self.save_image_result(self.part1Crop, self.InspectionImages[0], self.InspectionResult_Status[0], True, "P1")
-                #             self.save_image_result(self.part2Crop, self.InspectionImages[1], self.InspectionResult_Status[1], True, "P2")
-                #             self.save_image_result(self.part3Crop, self.InspectionImages[2], self.InspectionResult_Status[2], True, "P3")
-                #             self.save_image_result(self.part4Crop, self.InspectionImages[3], self.InspectionResult_Status[3], True, "P4")
-                #             self.save_image_result(self.part5Crop, self.InspectionImages[4], self.InspectionResult_Status[4], True, "P5")
-
-                #             self.InspectionImages[0] = self.downSampling(self.InspectionImages[0], width=1701, height=121)
-                #             self.InspectionImages[1] = self.downSampling(self.InspectionImages[1], width=1701, height=121)
-                #             self.InspectionImages[2] = self.downSampling(self.InspectionImages[2], width=1701, height=121)
-                #             self.InspectionImages[3] = self.downSampling(self.InspectionImages[3], width=1701, height=121)
-                #             self.InspectionImages[4] = self.downSampling(self.InspectionImages[4], width=1701, height=121)
-
-                #             print("Inspection Finished")
-                #             #Remember that list is mutable
-
-                #             self.part1Cam.emit(self.converQImageRGB(self.InspectionImages[0]))
-                #             self.part2Cam.emit(self.converQImageRGB(self.InspectionImages[1]))
-                #             self.part3Cam.emit(self.converQImageRGB(self.InspectionImages[2]))
-                #             self.part4Cam.emit(self.converQImageRGB(self.InspectionImages[3]))
-                #             self.part5Cam.emit(self.converQImageRGB(self.InspectionImages[4]))
-
-                #             # self.hoodFR_InspectionStatus.emit(self.InspectionStatus)
-
                 #emit the ethernet 
                 self.today_numofPart_signal.emit(self.inspection_config.today_numofPart)
                 self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
             
-                # Emit status based on the red tenmetsu status
-
-                
                 self.AGC_InspectionStatus.emit(self.InspectionStatus)
 
-                # Emit the hole detection
+
+            # if self.inspection_config.widget == 6:
+            #     print ("Widget 6 selected, but no implementation yet.")
+
+            # if self.inspection_config.widget == 7:
+            #     print ("Widget 7 selected, but no implementation yet.")
+
+            # if self.inspection_config.widget == 8:
+            #     print ("Widget 8 selected, but no implementation yet.")
+
+            if self.InstructionCode == 5:
+                # Close app and forcefully turn off PC
+                print("Instruction Code 5 received, closing app and turning off PC.")
+                os.system("shutdown /s /t 1")
+                self.running = False
+                break
+
 
         self.msleep(1)
 
@@ -706,7 +695,6 @@ class InspectionThread(QThread):
             ok_count_total -= 10
 
         self.setCounterFalse()
-
         self.save_result_database(partname = self.widget_dir_map[self.inspection_config.widget],
                 numofPart = [ok_count_total, ng_count_total], 
                 currentnumofPart = [ok_count_current, ng_count_current],
@@ -715,15 +703,12 @@ class InspectionThread(QThread):
                 status = "MANUAL",
                 NGreason = "MANUAL",
                 PPMS = "MANUAL")
-
         return [ok_count_current, ng_count_current], [ok_count_total, ng_count_total]
-    
     
     def save_result_database(self, partname, numofPart, 
                              currentnumofPart, deltaTime, 
                              kensainName, 
                              status, NGreason, PPMS):
-        # Ensure all inputs are strings or compatible types
 
         timestamp = datetime.now()
         timestamp_date = timestamp.strftime("%Y%m%d")
@@ -736,30 +721,28 @@ class InspectionThread(QThread):
         timestamp_date = str(timestamp_date)
         deltaTime = float(deltaTime)  # Ensure this is a float
         kensainName = str(kensainName)
-        detected_pitch_str = str(detected_pitch_str)
-        delta_pitch_str = str(delta_pitch_str)
-        total_length = float(total_length)  # Ensure this is a float
-        resultPitch = str(resultPitch)
         status = str(status)
         NGreason = str(NGreason)
+        PPMS = str(PPMS)
 
         self.cursor.execute('''
-        INSERT INTO inspection_results (partname, numofPart, currentnumofPart, timestampHour, timestampDate, deltaTime, kensainName, detected_pitch, delta_pitch, total_length, resultpitch, status, NGreason)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, detected_pitch_str, delta_pitch_str, total_length, resultPitch, status, NGreason))
+        INSERT INTO inspection_results (partname, numofPart, currentnumofPart, timestampHour, timestampDate, deltaTime, kensainName, status, NGreason, PPMS)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, status, NGreason, PPMS))
         self.conn.commit()
 
         # Update the totatl part number (Maybe the day has been changed)
         for key, value in self.widget_dir_map.items():
             self.inspection_config.today_numofPart[key] = self.get_last_entry_total_numofPart(value)
 
-        #Also save to mysql cursor
-        self.mysql_cursor.execute('''
-        INSERT INTO inspection_results (partName, numofPart, currentnumofPart, timestampHour, timestampDate, deltaTime, kensainName, detected_pitch, delta_pitch, total_length, resultpitch, status, NGreason)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, detected_pitch_str, delta_pitch_str, total_length, resultPitch, status, NGreason))
-        self.mysql_conn.commit()
-
+        # try:
+        #     self.mysql_cursor.execute('''
+        #     INSERT INTO inspection_results (partName, numofPart, currentnumofPart, timestampHour, timestampDate, deltaTime, kensainName, detected_pitch, delta_pitch, total_length, resultpitch, status, NGreason)
+        #     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        #     ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, detected_pitch_str, delta_pitch_str, total_length, resultPitch, status, NGreason))
+        #     self.mysql_conn.commit()
+        # except Exception as e:
+        #     print(f"Error saving to MySQL: {e}")
 
     def get_last_entry_currentnumofPart(self, part_name):
         self.cursor.execute('''
@@ -809,7 +792,6 @@ class InspectionThread(QThread):
             return currentnumofPart
         else:
             return [0, 0]
-            
 
     def draw_status_text_PIL(self, image, text, color, size = "normal", x_offset = 0, y_offset = 0):
 
@@ -995,3 +977,106 @@ class InspectionThread(QThread):
                 print(f"Added column: {column_name}")
             except sqlite3.OperationalError as e:
                 print(f"Could not add column {column_name}: {e}")
+
+    def process_and_emit_parts(self, width: int, height: int):
+        """
+        Downsample and emit all part crops dynamically.
+
+        Args:
+            width (int): Target width for downsampling.
+            height (int): Target height for downsampling.
+        """
+        part_crops = [
+            ("part1Crop", self.part1Cam),
+            ("part2Crop", self.part2Cam),
+            ("part3Crop", self.part3Cam),
+            ("part4Crop", self.part4Cam),
+            ("part5Crop", self.part5Cam),
+        ]
+
+        for attr_name, signal in part_crops:
+            crop = getattr(self, attr_name, None)
+            if crop is not None:
+                downsampled = self.downSampling(crop, width=width, height=height)
+                qimage = self.convertQImage(downsampled)
+                signal.emit(qimage)
+                setattr(self, attr_name, downsampled)
+
+    def handle_part_number_update(self):
+        """
+        Keep last valid part number (1..4). Ignore transient 0.
+        Non-zero invalid codes fall back to widget=0 as before.
+        """
+        code = self.partNumber
+        if code is None:
+            return
+
+        # Ignore transient zeros: use last valid if available
+        if code == 0:
+            code = self.last_valid_part_number
+            if code is None:
+                return  # nothing to do yet if we don't have a valid one
+
+        if code in (1, 2, 3, 4):
+            if code != self.last_valid_part_number:
+                self.last_valid_part_number = code
+                new_widget = 5 + (code - 1)  # maps 1..4 -> 5..8
+                if new_widget != self.inspection_config.widget:
+                    self.inspection_config.widget = new_widget
+                    print(f"Switching to widget {new_widget} based on part number {code}")
+                    self.firstTimeInspection = True
+                    self.inspection_config.doInspection = False
+            return
+
+        # Any other non-zero, non-1..4 code = unrecognized => reset widget
+        print(f"Part number {self.partNumber} not recognized for inspection.")
+        self.inspection_config.widget = 0
+        self.firstTimeInspection = True
+        self.inspection_config.doInspection = False
+
+    def handle_adjustments_and_counterreset(self):
+        """
+        Apply manual +/- adjustments if any flag is set, then handle counter reset.
+        Keeps logic scoped to the currently selected widget.
+        """
+        cfg = self.inspection_config
+        w = cfg.widget
+
+        # Any manual adjustment flags on?
+        any_adjust = (
+            cfg.furyou_plus or cfg.furyou_minus or
+            cfg.kansei_plus or cfg.kansei_minus or
+            cfg.furyou_plus_10 or cfg.furyou_minus_10 or
+            cfg.kansei_plus_10 or cfg.kansei_minus_10
+        )
+
+        if any_adjust:
+            cur = cfg.current_numofPart[w]
+            today = cfg.today_numofPart[w]
+            new_cur, new_today = self.manual_adjustment(
+                cur, today,
+                cfg.furyou_plus,
+                cfg.furyou_minus,
+                cfg.furyou_plus_10,
+                cfg.furyou_minus_10,
+                cfg.kansei_plus,
+                cfg.kansei_minus,
+                cfg.kansei_plus_10,
+                cfg.kansei_minus_10,
+            )
+            cfg.current_numofPart[w], cfg.today_numofPart[w] = new_cur, new_today
+            print("Manual Adjustment Done")
+
+        if cfg.counterReset is True:
+            cfg.current_numofPart[w] = [0, 0]
+            cfg.counterReset = False
+            self.save_result_database(
+                partname=self.widget_dir_map[w],
+                numofPart=cfg.today_numofPart[w],
+                currentnumofPart=[0, 0],
+                deltaTime=0.0,
+                kensainName=cfg.kensainNumber,
+                status="COUNTERRESET",
+                NGreason="COUNTERRESET",
+                PPMS="COUNTERRESET",
+            )

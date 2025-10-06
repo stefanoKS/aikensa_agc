@@ -45,6 +45,7 @@ class AIKensa(QMainWindow):
 
         self.modbusThread.holdingUpdated.connect(self.inspection_thread.on_holding_update)
         self.modbusThread.start()
+        self.inspection_thread.start()
 
         # Starting up the threads
         self.calibration_thread = CalibrationThread(CalibrationConfig())
@@ -118,13 +119,19 @@ class AIKensa(QMainWindow):
 
         for button_name, config in button_config.items():
             button = main_widget.findChild(QPushButton, button_name)
-            
             if button:
                 # Connect each signal with the necessary parameters
                 button.clicked.connect(lambda _, idx=config["widget_index"]: self.stackedWidget.setCurrentIndex(idx))
                 button.clicked.connect(lambda _, param=config["inspection_param"]: self._set_inspection_params(self.inspection_thread, 'widget', param))
                 button.clicked.connect(lambda: self.inspection_thread.start() if not self.inspection_thread.isRunning() else None)
                 button.clicked.connect(self.calibration_thread.stop)
+
+        # Go directly to widget index 5 with inspection param 5 (for debugging)
+        self.stackedWidget.setCurrentIndex(5)
+        self._set_inspection_params(self.inspection_thread, 'widget', 5)
+        if not self.inspection_thread.isRunning():
+            self.inspection_thread.start()
+        self.calibration_thread.stop()
 
         self.timeLabel = [self.stackedWidget.widget(i).findChild(QLabel, "timeLabel") for i in [0, 1, 5]]
 

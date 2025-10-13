@@ -38,7 +38,8 @@ class CameraThread(QThread):
     def run(self):
         self.Tis = TIS()
         try:
-            self.Tis.open_device(self.serial, self.width, self.height, f"{self.fps}/1", SinkFormats.BGRX, False, conversion="videoconvert ! video/x-raw,format=BGR")
+            # self.Tis.open_device(self.serial, self.width, self.height, f"{self.fps}/1", SinkFormats.BGRX, False, conversion="videoconvert ! video/x-raw,format=BGR")
+            self.Tis.open_device(self.serial, self.width, self.height, f"{self.fps}/1", SinkFormats.BGRA, False)
             self.Tis.start_pipeline()
             # self.Tis.list_properties()
 

@@ -128,16 +128,16 @@ class InspectionThread(QThread):
         self.planarizeTransform_temp = None
         self.planarizeTransform_temp_scaled = None
         
-        self.part1Crop_Pos = (310, 515)
-        self.part2Crop_Pos = (316, 740)
-        self.part3Crop_Pos = (320, 960)
-        self.part4Crop_Pos = (325, 1190)
-        self.part5Crop_Pos = (330, 1415)
-        self.part6Crop_Pos = (1590, 493)
-        self.part7Crop_Pos = (1590, 720)
-        self.part8Crop_Pos = (1596, 945)
-        self.part9Crop_Pos = (1600, 1173)
-        self.part10Crop_Pos = (1605, 1395)
+        self.part1Crop_Pos = (335, 505)
+        self.part2Crop_Pos = (336, 730)
+        self.part3Crop_Pos = (340, 960)
+        self.part4Crop_Pos = (345, 1185)
+        self.part5Crop_Pos = (350, 1410)
+        self.part6Crop_Pos = (1610, 490)
+        self.part7Crop_Pos = (1610, 717)
+        self.part8Crop_Pos = (1616, 943)
+        self.part9Crop_Pos = (1615, 1170)
+        self.part10Crop_Pos = (1625, 1395)
 
         self.partCrop_width_height = (150, 150)
 

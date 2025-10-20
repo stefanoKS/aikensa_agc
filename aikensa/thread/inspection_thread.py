@@ -924,16 +924,21 @@ class InspectionThread(QThread):
                                 verbose=False
                             )
                             # Extract the argmax result
-                            self.InspectionResult_SetID_OK[i] = list(result)[0].probs.data.argmax().item()
-                            print(self.InspectionResult_SetID_OK[i])
-                            # cv2.imwrite(f"./test_{i}.png", self.SetInspectionImages[i])
+                            self.InspectionResult_DetectionID[i] = list(result)[0].probs.data.argmax().item()
                         
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-                        # self.InspectionResult_SetID_OK = random_list(5) #Dummy values for testing
-                        self.InspectionResult_SetID_OK = np.flip(self.InspectionResult_SetID_OK)
-                        self.InspectionResult_SetID_OK = [1 - x for x in self.InspectionResult_SetID_OK]
-                        self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]  # Invert the OK values for NG
-                        
+                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
+
+                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
+                        # self.InspectionResult_DetectionID = [1 - x for x in self.InspectionResult_DetectionID]
+                        self.InspectionResult_SetID_OK = self.InspectionResult_DetectionID.copy()
+                        self.InspectionResult_SetID_OK = [1 - x for x in self.InspectionResult_DetectionID]
+                        self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]
+
+                        for i, d in enumerate(self.InspectionResult_DetectionID):
+                            if d == 1:
+                                self.InspectionResult_SetID_OK[i] = 0
+                                self.InspectionResult_SetID_NG[i] = 0
+
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
                         self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
                         self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)

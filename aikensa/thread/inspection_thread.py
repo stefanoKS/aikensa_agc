@@ -272,7 +272,7 @@ class InspectionThread(QThread):
         self.partNumber = reg_dict.get(50, 0)
 
         # DEBUG
-        self.partNumber = 1
+        # self.partNumber = 1
 
         self.serialNumber_front = reg_dict.get(62, 0)
         self.serialNumber_back  = reg_dict.get(63, 0)
@@ -308,17 +308,17 @@ class InspectionThread(QThread):
 
     def initialize_single_camera(self, camID):
 
-        self.cap_cam_ic4 = initialize_camera_ic4("21520069",
+        self.cap_cam_ic4 = initialize_camera_ic4("37420968",
             width=3072, height=2048, fps=25,
             color=True,
-            exposure_us=5000, gain_db=10, wb_temperature=4500,
+            exposure_us=35000, gain_db=4, wb_temperature=6500,
             auto_exposure=False, auto_gain=False, auto_wb=False)
 
         if not self.cap_cam_ic4.isOpened():
-            print("Failed to open IC4 camera 21520069")
+            print("Failed to open IC4 camera ")
             self.cap_cam_ic4 = None
         else:
-            print("Initialized IC4 camera 21520069")
+            print("Initialized IC4 camera ")
 
         # Optionally compute center from IC4 (same API):
         # if self.cap_cam_ic4:
@@ -420,6 +420,8 @@ class InspectionThread(QThread):
                 if self.camFrame_ic4 is None:
                     continue
                 self.camFrame_ic4 = cv2.rotate(self.camFrame_ic4, cv2.ROTATE_180)
+                #invert rgb to bgr
+                self.camFrame_ic4 = cv2.cvtColor(self.camFrame_ic4, cv2.COLOR_BGR2RGB)
 
             #J30 RH Inspection
             if self.inspection_config.widget == 7:

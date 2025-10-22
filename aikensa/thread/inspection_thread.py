@@ -17,6 +17,7 @@ from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer, pyqtSlot
 from PyQt5.QtGui import QImage, QPixmap
 
 from aikensa.camscripts.cam_init import initialize_camera
+from aikensa.camscripts.cam_init_ic4 import initialize_camera as initialize_camera_ic4
 from aikensa.opencv_imgprocessing.cameracalibrate import detectCharucoBoard , calculatecameramatrix, warpTwoImages, calculateHomography_template, warpTwoImages_template
 from aikensa.opencv_imgprocessing.arucoplanarize import planarize, planarize_image
 from dataclasses import dataclass, field
@@ -290,6 +291,7 @@ class InspectionThread(QThread):
         if camID == -1:
             print("No valid camera selected, displaying placeholder.")
             self.cap_cam = None  # No camera initialized
+            self.cap_cam_ic4 = None
             # self.frame = self.create_placeholder_image()
         else:
             print(f"Initializing camera with ID {camID}")
@@ -302,6 +304,8 @@ class InspectionThread(QThread):
                 self.cap_cam = None
             else:
                 print(f"Initialized Camera on ID {camID}")
+
+            self.cap_cam_ic4 = initialize_camera_ic4("37420968")
 
     def release_camera(self):
         if self.cap_cam is not None:
@@ -393,16 +397,10 @@ class InspectionThread(QThread):
                 self.handle_part_number_update()
 
             if self.inspection_config.widget in [0, 5, 6, 7, 8]:
-                # render the camera first
                 if self.cap_cam is None:
                     print("Camera 0 is not initialized, skipping frame capture.")
                     continue
-                # Read the frame from the camera
                 _, self.camFrame = self.cap_cam.read()
-                # angle = self.camera_angle
-                # M = cv2.getRotationMatrix2D(self.center_image, angle, 1.0)  # 1.0 is the scale factor
-                # self.camFrame = cv2.warpAffine(self.camFrame, M, (self.camFrame.shape[1], self.camFrame.shape[0]))
-                #rotate camera by 180 degrees
                 self.camFrame = cv2.rotate(self.camFrame, cv2.ROTATE_180)
 
             #J30 RH Inspection

@@ -374,19 +374,21 @@ class AIKensa(QMainWindow):
         This method is connected to the partNumber_signal of the inspection_config.
         """
         widget = self.stackedWidget.widget(5)
-        if partNumber == 0:
-            label = "J30LH"
-        elif partNumber == 1:
-            label = "J30RH"
+        if partNumber == 1:
+            label = "AGC J59J RH"
         elif partNumber == 2:
-            label = "J59JLH"
+            label = "AGC J59J LH"
         elif partNumber == 3:
-            label = "J59JRH"
-        else:
-            label = "Unknown Part"
+            label = "AG 910930 RH"
+        elif partNumber == 4:
+            label = "AG 910931 LH"
+        # else:
+        #     label = "Unknown Part"
         partNumber_label = widget.findChild(QLabel, "partName")
-        if partNumber_label:
-            partNumber_label.setText(label)
+
+        if partNumber != 0:
+            if partNumber_label:
+                partNumber_label.setText(label)
 
 def main():
     app = QApplication(sys.argv)

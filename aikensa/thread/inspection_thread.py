@@ -10,14 +10,11 @@ import logging
 import sqlite3
 import mysql.connector
 
-from sahi import AutoDetectionModel
-from sahi.predict import get_prediction, get_sliced_prediction, predict
-
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer, pyqtSlot
 from PyQt5.QtGui import QImage, QPixmap
 
 from aikensa.camscripts.cam_init import initialize_camera
-from aikensa.camscripts.cam_init_ic4 import initialize_camera as initialize_camera_ic4
+from aikensa.camscripts.cam_init_ic4 import initialize_camera_ic4
 from aikensa.opencv_imgprocessing.cameracalibrate import detectCharucoBoard , calculatecameramatrix, warpTwoImages, calculateHomography_template, warpTwoImages_template
 from aikensa.opencv_imgprocessing.arucoplanarize import planarize, planarize_image
 from dataclasses import dataclass, field
@@ -273,39 +270,61 @@ class InspectionThread(QThread):
     def on_holding_update(self, reg_dict):
         # Only called whenever the Modbus thread emits new data.
         self.partNumber = reg_dict.get(50, 0)
-        # self.partNumber = 8 #For testing only
+
+        # DEBUG
+        self.partNumber = 1
+
         self.serialNumber_front = reg_dict.get(62, 0)
         self.serialNumber_back  = reg_dict.get(63, 0)
         self.InstructionCode    = reg_dict.get(100, 0)
 
+        #DEBUG
         print(f"Part Number: {self.partNumber}")
         print(f"Serial Number Front: {self.serialNumber_front}")
         print(f"Serial Number Back:  {self.serialNumber_back}")
         print(f"Instruction Code:     {self.InstructionCode}")
 
+    # def initialize_single_camera(self, camID):
+    #     if self.cap_cam is not None:
+    #         self.cap_cam.release()  # Release the previous camera if it's already open
+    #         print(f"Camera {self.inspection_config.cameraID} released.")
+
+    #     if camID == -1:
+    #         print("No valid camera selected, displaying placeholder.")
+    #         self.cap_cam = None  # No camera initialized
+
+    #     else:
+    #         print(f"Initializing camera with ID {camID}")
+    #         self.cap_cam = initialize_camera(camID)
+    #         #find the center of the image
+    #         self.center_image = (self.cap_cam.get(cv2.CAP_PROP_FRAME_WIDTH) // 2, self.cap_cam.get(cv2.CAP_PROP_FRAME_HEIGHT) // 2)
+
+    #         if not self.cap_cam.isOpened():
+    #             print(f"Failed to open camera with ID {camID}")
+    #             self.cap_cam = None
+    #         else:
+    #             print(f"Initialized Camera on ID {camID}")
+
+
     def initialize_single_camera(self, camID):
-        if self.cap_cam is not None:
-            self.cap_cam.release()  # Release the previous camera if it's already open
-            print(f"Camera {self.inspection_config.cameraID} released.")
 
-        if camID == -1:
-            print("No valid camera selected, displaying placeholder.")
-            self.cap_cam = None  # No camera initialized
+        self.cap_cam_ic4 = initialize_camera_ic4("21520069",
+            width=3072, height=2048, fps=25,
+            color=True,
+            exposure_us=5000, gain_db=10, wb_temperature=4500,
+            auto_exposure=False, auto_gain=False, auto_wb=False)
+
+        if not self.cap_cam_ic4.isOpened():
+            print("Failed to open IC4 camera 21520069")
             self.cap_cam_ic4 = None
-            # self.frame = self.create_placeholder_image()
         else:
-            print(f"Initializing camera with ID {camID}")
-            self.cap_cam = initialize_camera(camID)
-            #find the center of the image
-            self.center_image = (self.cap_cam.get(cv2.CAP_PROP_FRAME_WIDTH) // 2, self.cap_cam.get(cv2.CAP_PROP_FRAME_HEIGHT) // 2)
+            print("Initialized IC4 camera 21520069")
 
-            if not self.cap_cam.isOpened():
-                print(f"Failed to open camera with ID {camID}")
-                self.cap_cam = None
-            else:
-                print(f"Initialized Camera on ID {camID}")
-
-            self.cap_cam_ic4 = initialize_camera_ic4("37420968")
+        # Optionally compute center from IC4 (same API):
+        # if self.cap_cam_ic4:
+        #     w_ic4 = int(self.cap_cam_ic4.get(cv2.CAP_PROP_FRAME_WIDTH))
+        #     h_ic4 = int(self.cap_cam_ic4.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        #     self.center_image_ic4 = (w_ic4 // 2, h_ic4 // 2)
 
     def release_camera(self):
         if self.cap_cam is not None:
@@ -383,7 +402,6 @@ class InspectionThread(QThread):
         print("AI Model Initialized")
 
         self.current_cameraID = self.inspection_config.cameraID
-        self.initialize_single_camera(self.current_cameraID)
         self.initialize_single_camera(0)
 
         self.load_crop_coords("aikensa/cameraconfig/part_pos.yaml")
@@ -397,17 +415,17 @@ class InspectionThread(QThread):
                 self.handle_part_number_update()
 
             if self.inspection_config.widget in [0, 5, 6, 7, 8]:
-                if self.cap_cam is None:
-                    print("Camera 0 is not initialized, skipping frame capture.")
+
+                ok, self.camFrame_ic4 = self.cap_cam_ic4.read(timeout_ms=1000)
+                if self.camFrame_ic4 is None:
                     continue
-                _, self.camFrame = self.cap_cam.read()
-                self.camFrame = cv2.rotate(self.camFrame, cv2.ROTATE_180)
+                self.camFrame_ic4 = cv2.rotate(self.camFrame_ic4, cv2.ROTATE_180)
 
             #J30 RH Inspection
             if self.inspection_config.widget == 7:
                 self.handle_adjustments_and_counterreset()
                 self.part_crops = crop_parts(
-                    img=self.camFrame,
+                    img=self.camFrame_ic4,
                     crop_start=int(self.J30RH_cropstart),
                     crop_height=int(self.J30RH_part_height_offset),
                     crop_y_positions=[
@@ -600,16 +618,15 @@ class InspectionThread(QThread):
                 self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
             
                 self.AGC_InspectionStatus.emit(self.InspectionStatus)
-
             #J59 JLH Inspection
             if self.inspection_config.widget == 6:
                 self.handle_adjustments_and_counterreset()
 
-                self.part1Crop = self.crop_part(self.camFrame, "J59JLH_part1_Crop", out_w=1771, out_h=121)
-                self.part2Crop = self.crop_part(self.camFrame, "J59JLH_part2_Crop", out_w=1771, out_h=121)
-                self.part3Crop = self.crop_part(self.camFrame, "J59JLH_part3_Crop", out_w=1771, out_h=121)
-                self.part4Crop = self.crop_part(self.camFrame, "J59JLH_part4_Crop", out_w=1771, out_h=121)
-                self.part5Crop = self.crop_part(self.camFrame, "J59JLH_part5_Crop", out_w=1771, out_h=121)
+                self.part1Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part1_Crop", out_w=1771, out_h=121)
+                self.part2Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part2_Crop", out_w=1771, out_h=121)
+                self.part3Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part3_Crop", out_w=1771, out_h=121)
+                self.part4Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part4_Crop", out_w=1771, out_h=121)
+                self.part5Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part5_Crop", out_w=1771, out_h=121)
                 # cv2.imwrite("part1_crop_test.jpg", self.part1Crop)
                 # cv2.imwrite("part2_crop_test.jpg", self.part2Crop)
                 # cv2.imwrite("part3_crop_test.jpg", self.part3Crop)
@@ -797,15 +814,14 @@ class InspectionThread(QThread):
                 self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
             
                 self.AGC_InspectionStatus.emit(self.InspectionStatus)
-
             #J59 JRH Inspection
             if self.inspection_config.widget == 5:
                 self.handle_adjustments_and_counterreset()
-                self.part1Crop = self.crop_part(self.camFrame, "J59JRH_part1_Crop", out_w=1771, out_h=121)
-                self.part2Crop = self.crop_part(self.camFrame, "J59JRH_part2_Crop", out_w=1771, out_h=121)
-                self.part3Crop = self.crop_part(self.camFrame, "J59JRH_part3_Crop", out_w=1771, out_h=121)
-                self.part4Crop = self.crop_part(self.camFrame, "J59JRH_part4_Crop", out_w=1771, out_h=121)
-                self.part5Crop = self.crop_part(self.camFrame, "J59JRH_part5_Crop", out_w=1771, out_h=121)
+                self.part1Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part1_Crop", out_w=1771, out_h=121)
+                self.part2Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part2_Crop", out_w=1771, out_h=121)
+                self.part3Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part3_Crop", out_w=1771, out_h=121)
+                self.part4Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part4_Crop", out_w=1771, out_h=121)
+                self.part5Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part5_Crop", out_w=1771, out_h=121)
 
                 self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
 
@@ -1029,7 +1045,6 @@ class InspectionThread(QThread):
                 self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
             
                 self.AGC_InspectionStatus.emit(self.InspectionStatus)
-
 
             if self.InstructionCode == 5:
                 # Close app and forcefully turn off PC
@@ -1506,47 +1521,6 @@ class InspectionThread(QThread):
             )
 
     def crop_part(self, image, attr_name: str, out_w: int = 512, out_h: int = 512):
-        """
-        Crop a quadrilateral region from the input image using self.<attr_name>
-        and map it into a rectangle of size (out_w x out_h).
-
-        The attribute must be a list of 4 points:
-            [TopLeft, BottomLeft, BottomRight, TopRight]
-
-        Example:
-            cropped = self.crop_part(image, "J30RH_part1_Crop", 512, 512)
-        """
-        # Retrieve the coordinate list from the instance
-        if not hasattr(self, attr_name):
-            raise AttributeError(f"Attribute '{attr_name}' not found in self.")
-        quad = getattr(self, attr_name)
-        if quad is None:
-            raise ValueError(f"'{attr_name}' is None (not loaded yet).")
-        if len(quad) != 4:
-            raise ValueError(f"'{attr_name}' must contain 4 corner points, got {len(quad)}.")
-
-        # Convert to NumPy array and reorder for OpenCV
-        tl, bl, br, tr = quad  # Your order
-        src = np.array([tl, tr, br, bl], dtype=np.float32)
-
-        # Destination rectangle (top-left → bottom-right)
-        dst = np.array([
-            [0, 0],
-            [out_w - 1, 0],
-            [out_w - 1, out_h - 1],
-            [0, out_h - 1]
-        ], dtype=np.float32)
-
-        # Compute the perspective transform matrix and warp
-        M = cv2.getPerspectiveTransform(src, dst)
-        cropped = cv2.warpPerspective(
-            image, M, (out_w, out_h),
-            flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_REPLICATE
-        )
-
-        return cropped
-    
         """
         Crop a quadrilateral region from the input image using self.<attr_name>
         and map it into a rectangle of size (out_w x out_h).

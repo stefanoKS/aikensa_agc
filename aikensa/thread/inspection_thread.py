@@ -311,7 +311,7 @@ class InspectionThread(QThread):
         self.cap_cam_ic4 = initialize_camera_ic4("37420968",
             width=3072, height=2048, fps=25,
             color=True,
-            exposure_us=35000, gain_db=4, wb_temperature=6500,
+            exposure_us=15000, gain_db=10, wb_temperature=6500,
             auto_exposure=False, auto_gain=False, auto_wb=False)
 
         if not self.cap_cam_ic4.isOpened():

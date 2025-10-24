@@ -1322,10 +1322,22 @@ class InspectionThread(QThread):
         return camera_matrix, distortion_coeff
 
     def initialize_model(self):
-        AGCJ30LH_partDetectionModel = None
-        AGCJ30LH_setDetectionModel = None
-        AGCJ30RH_partDetectionModel = None
-        AGCJ30RH_setDetectionModel = None
+
+        self.AGCJ59JRH_TAPE_LEFT = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_LEFT.pt")
+        self.AGCJ59JRH_TAPE_CENTER = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_CENTER.pt")
+        self.AGCJ59JRH_TAPE_RIGHT = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_RIGHT.pt")
+
+        self.AGCJ59JRH_SET_LEFT = None
+        self.AGCJ59JRH_SET_CENTER = None
+        self.AGCJ59JRH_SET_RIGHT = None
+
+        self.AGCJ59JRH_partDetectionModel = YOLO("")
+
+
+
+
+        self.AGCJ30RH_partDetectionModel = None
+        self.AGCJ30RH_setDetectionModel = None
 
         AGCJ59JLH_partDetectionModel = None
         AGCJ59JLH_setDetectionModel = None

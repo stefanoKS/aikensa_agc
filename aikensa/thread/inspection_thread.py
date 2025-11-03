@@ -28,6 +28,9 @@ from PIL import ImageFont, ImageDraw, Image
 from aikensa.scripts.scripts import list_to_16bit_int, load_register_map, invert_16bit_int, random_list
 from aikensa.scripts.scripts_img_processing import crop_parts
 
+from aikensa.parts_config.AGC.J59J.J59J_SET import J59J_Set_Check as J59J_Set_Check
+from aikensa.parts_config.AGC.J59J.J59J_KENSA import J59J_Tape_Check as J59J_Tape_Check
+
 @dataclass
 class InspectionConfig:
     widget: int = 0
@@ -41,9 +44,7 @@ class InspectionConfig:
     map2_downscaled: list = field(default_factory=lambda: [None]*10) #for 10 cameras
 
     doInspection: bool = False
-
-    kouden_sensor: list =  field(default_factory=lambda: [0]*5)
-    button_sensor: int = 0
+    doTapeInspection: bool = False
 
     kensainNumber: str = None
     furyou_plus: bool = False
@@ -210,8 +211,13 @@ class InspectionThread(QThread):
 
         self.InspectionImages = [None]*5
 
-        self.SetInspectionImages = [None]*5
-        self.PartInspectionImages = [None]*5
+        self.SetExistInspectionImages = [None]*5
+        self.SetCorrectInspectionImages = [None]*5
+        self.SetCorrectInspectionImages_result = [None]*5
+
+        self.TapeExistInspectionImages = [None]*5
+        self.TapeCorrectInspectionImages = [None]*5
+        self.TapeCorrectInspectionImages_result = [None]*5
 
         self.InspectionResult_DetectionID = [None]*5
         self.InspectionResult_DetectionID_int = None
@@ -272,7 +278,7 @@ class InspectionThread(QThread):
         self.partNumber = reg_dict.get(50, 0)
 
         # DEBUG
-        # self.partNumber = 1
+        # self.partNumber = 4
 
         self.serialNumber_front = reg_dict.get(62, 0)
         self.serialNumber_back  = reg_dict.get(63, 0)
@@ -422,23 +428,14 @@ class InspectionThread(QThread):
                 self.camFrame_ic4 = cv2.rotate(self.camFrame_ic4, cv2.ROTATE_180)
                 #invert rgb to bgr
                 self.camFrame_ic4 = cv2.cvtColor(self.camFrame_ic4, cv2.COLOR_BGR2RGB)
-
-            #J30 RH Inspection
-            if self.inspection_config.widget == 7:
+            #J30 LH Inspection
+            if self.inspection_config.widget == 8:
                 self.handle_adjustments_and_counterreset()
-                self.part_crops = crop_parts(
-                    img=self.camFrame_ic4,
-                    crop_start=int(self.J30RH_cropstart),
-                    crop_height=int(self.J30RH_part_height_offset),
-                    crop_y_positions=[
-                        int(self.J30RH_part1_Crop_YPos),
-                        int(self.J30RH_part2_Crop_YPos),
-                        int(self.J30RH_part3_Crop_YPos),
-                        int(self.J30RH_part4_Crop_YPos),
-                        int(self.J30RH_part5_Crop_YPos),
-                    ],
-                )
-                self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop = self.part_crops
+                self.part1Crop = self.crop_part(self.camFrame_ic4, "J30LH_part1_Crop", out_w=1771, out_h=121)
+                self.part2Crop = self.crop_part(self.camFrame_ic4, "J30LH_part2_Crop", out_w=1771, out_h=121)
+                self.part3Crop = self.crop_part(self.camFrame_ic4, "J30LH_part3_Crop", out_w=1771, out_h=121)
+                self.part4Crop = self.crop_part(self.camFrame_ic4, "J30LH_part4_Crop", out_w=1771, out_h=121)
+                self.part5Crop = self.crop_part(self.camFrame_ic4, "J30LH_part5_Crop", out_w=1771, out_h=121)
 
                 self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
 
@@ -457,29 +454,10 @@ class InspectionThread(QThread):
                     self.InspectionImages[3] = self.part4Crop
                     self.InspectionImages[4] = self.part5Crop
 
-                if self.inspection_config.doInspection is True:
-                    self.inspection_config.doInspection = False
-                    #Save images, time and part number to ./training_images
-                    if not os.path.exists("./aikensa/training_images"):
-                        os.makedirs("./aikensa/training_images")
-                        #Use time for the file name
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    #save InspectionImages with cv2.write
-                    self.InspectionImages[0] = self.part1Crop
-                    self.InspectionImages[1] = self.part2Crop
-                    self.InspectionImages[2] = self.part3Crop
-                    self.InspectionImages[3] = self.part4Crop
-                    self.InspectionImages[4] = self.part5Crop
-
-                    for i, img in enumerate(self.InspectionImages):
-                        if img is not None:
-                            filename = f"./aikensa/training_images/part{i+1}_{timestamp}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-
                 if self.InstructionCode == 0:
                     self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
                     if self.InstructionCode_prev == 0:
+                        # print("Already processed Set Inspection command, skipping...")
                         pass  # Skip, already processed
                     else:
                         self.InstructionCode_prev = self.InstructionCode
@@ -517,24 +495,53 @@ class InspectionThread(QThread):
                         time.sleep(0.5)
 
                 # 1 = Set Inspection
-                if self.InstructionCode == 1:
+                if self.InstructionCode == 1 or self.inspection_config.doInspection is True:
                     if self.InstructionCode_prev == 1:
+                        # print("Already processed Set Inspection command, skipping...")
                         pass
                     else:
                         self.InstructionCode_prev = self.InstructionCode
+                        self.inspection_config.doInspection = False
 
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-                        # self.InspectionResult_SetID_OK = random_list(5) #Dummy values for testing
-                        self.InspectionResult_SetID_OK = [1, 1, 1, 1, 1]
-                        self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]  # Invert the OK values for NG
-                        
+                        # check whether set part is set correctly
+                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
+
+                        for i, crop in enumerate(parts):
+
+                            self.SetExistInspectionImages[i] = cv2.resize(crop, (512, 512))
+                            self.SetCorrectInspectionImages[i] = crop
+
+                            SetPartExist_result = self.AGCJ59JRH_setDetectionModel(self.SetExistInspectionImages[i],stream=True, verbose=False)
+                            self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
+
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i] = J59J_Set_Check(self.SetCorrectInspectionImages[i], self.AGCJ59JRH_SET_LEFT, self.AGCJ59JRH_SET_RIGHT)
+                        (
+                            self.part1Crop,
+                            self.part2Crop,
+                            self.part3Crop,
+                            self.part4Crop,
+                            self.part5Crop,
+                        ) = self.SetCorrectInspectionImages_result[:5]
+
+                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+                        #wait t=1 sec
+                        time.sleep(0.5)
+
+                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
+                        self.InspectionResult_SetID_OK = np.flip(self.InspectionResult_SetID_OK)
+
+                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
+                        self.InspectionResult_SetID_OK = [int(x) for x in self.InspectionResult_SetID_OK]
+                        self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]
+
+                        for i, d in enumerate(self.InspectionResult_DetectionID):
+                            if d == 1:
+                                self.InspectionResult_SetID_OK[i] = 0
+                                self.InspectionResult_SetID_NG[i] = 0
+
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
                         self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
                         self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Set OK ID: {self.InspectionResult_SetID_OK}")
-                        print(f"Inspection Result Set NG ID: {self.InspectionResult_SetID_NG}")
 
                         #Emit the inspection result and serial number to holding registers
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"],[self.serialNumber_front])
@@ -544,46 +551,88 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
                         print("Inspection Result Set ID Emitted")
-                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
                         time.sleep(0.5)
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                        # print("0 State Code Emitted, ready for next instruction")
 
-                        if not os.path.exists("./aikensa/training_images/set"):
-                            os.makedirs("./aikensa/training_images/set")
-                            #Use time for the file name
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        # Save corrected set images for training (compact & safe)
+                        save_dir = "./aikensa/training_images/set"
+                        os.makedirs(save_dir, exist_ok=True)
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        #save InspectionImages with cv2.write
-                        self.InspectionImages[0] = self.part1Crop
-                        self.InspectionImages[1] = self.part2Crop
-                        self.InspectionImages[2] = self.part3Crop
-                        self.InspectionImages[3] = self.part4Crop
-                        self.InspectionImages[4] = self.part5Crop
-
-                        for i, img in enumerate(self.InspectionImages):
-                            if img is not None:
-                                filename = f"./aikensa/training_images/set/part{i+1}_{timestamp}.jpg"
-                                cv2.imwrite(filename, img)
-                                print(f"Saved {filename}")
+                        for i, img in enumerate(self.SetCorrectInspectionImages):
+                            if img is None:
+                                continue
+                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
+                            cv2.imwrite(filename, img)
+                            print(f"Saved {filename}")
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        
 
                 # 2 = Tape Inspection
-                if self.InstructionCode == 2:
+                if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
                     if self.InstructionCode_prev == 2:
                         pass
+                        print("Already processed Tape Inspection command, skipping..."  )
                     else:
+                    # if self.InstructionCode == 2:
                         self.InstructionCode_prev = self.InstructionCode
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-                        # self.InspectionResult_TapeID_OK = random_list(5) #Dummy values for testing
-                        self.InspectionResult_TapeID_OK = [1, 1, 1, 1, 1]
+                        self.inspection_config.doTapeInspection = False
+
+                        # check whether set part is set correctly
+                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
+                        
+                        N_PARTS = 5
+                        # ensure these are indexable
+                        self.TapeExistInspectionImages        = [None] * N_PARTS
+                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
+                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
+                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
+                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
+
+                        for i, crop in enumerate(parts):
+
+                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
+                            self.TapeCorrectInspectionImages[i] = crop
+                            TapePartExist_result = self.AGCJ59JRH_setDetectionModel(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
+                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J59J_Tape_Check(self.TapeCorrectInspectionImages[i], self.AGCJ59JRH_TAPE_LEFT, self.AGCJ59JRH_TAPE_RIGHT, self.AGCJ59JRH_TAPE_CENTER)
+
+
+                        (
+                            self.part1Crop,
+                            self.part2Crop,
+                            self.part3Crop,
+                            self.part4Crop,
+                            self.part5Crop,
+                        ) = self.TapeCorrectInspectionImages_result[:5]
+
+                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+                        #wait t=1 sec
+                        time.sleep(0.5)
+
+                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
+                        print (self.InspectionResult_DetectionID)
+                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
+
+                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
+                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
                         self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
+
+                        for i, d in enumerate(self.InspectionResult_DetectionID):
+                            if d == 1:
+                                self.InspectionResult_TapeID_OK[i] = 0
+                                self.InspectionResult_TapeID_NG[i] = 0
+
+                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
+                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
+                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
 
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
                         self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
                         self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
 
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
+                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
+
+ 
 
                         #Emit the inspection result and serial number to holding registers
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
@@ -595,25 +644,254 @@ class InspectionThread(QThread):
                         print("Inspection Result Tape ID Emitted")
                         # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
                         time.sleep(0.5)
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                        # print("0 State Code Emitted, ready for next instruction")
 
-                        if not os.path.exists("./aikensa/training_images/tape"):
-                            os.makedirs("./aikensa/training_images/tape")
-                            #Use time for the file name
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        # Save corrected tape images for training (compact & safe)
+                        save_dir = "./aikensa/training_images/tape"
+                        os.makedirs(save_dir, exist_ok=True)
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        #save InspectionImages with cv2.write
-                        self.InspectionImages[0] = self.part1Crop
-                        self.InspectionImages[1] = self.part2Crop
-                        self.InspectionImages[2] = self.part3Crop
-                        self.InspectionImages[3] = self.part4Crop
-                        self.InspectionImages[4] = self.part5Crop
+                        for i, img in enumerate(self.TapeCorrectInspectionImages):
+                            if img is None:
+                                continue
+                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
+                            cv2.imwrite(filename, img)
+                            print(f"Saved {filename}")
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        
+                #emit the ethernet 
+                self.today_numofPart_signal.emit(self.inspection_config.today_numofPart)
+                self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
+            
+                self.AGC_InspectionStatus.emit(self.InspectionStatus)
+            #J30 RH Inspection
+            if self.inspection_config.widget == 7:
+                self.handle_adjustments_and_counterreset()
+                self.part1Crop = self.crop_part(self.camFrame_ic4, "J30RH_part1_Crop", out_w=1771, out_h=121)
+                self.part2Crop = self.crop_part(self.camFrame_ic4, "J30RH_part2_Crop", out_w=1771, out_h=121)
+                self.part3Crop = self.crop_part(self.camFrame_ic4, "J30RH_part3_Crop", out_w=1771, out_h=121)
+                self.part4Crop = self.crop_part(self.camFrame_ic4, "J30RH_part4_Crop", out_w=1771, out_h=121)
+                self.part5Crop = self.crop_part(self.camFrame_ic4, "J30RH_part5_Crop", out_w=1771, out_h=121)
 
-                        for i, img in enumerate(self.InspectionImages):
-                            if img is not None:
-                                filename = f"./aikensa/training_images/tape/part{i+1}_{timestamp}.jpg"
-                                cv2.imwrite(filename, img)
-                                print(f"Saved {filename}")
+                self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+
+                if self.firstTimeInspection is False:
+                    if self.inspection_config.doInspection is False:
+                        self.InspectionTimeStart = time.time()
+                        self.firstTimeInspection = True
+                        self.inspection_config.doInspection = True
+                
+                self.partNumber_signal.emit(self.partNumber)
+
+                if self.InstructionCode != 0:
+                    self.InspectionImages[0] = self.part1Crop
+                    self.InspectionImages[1] = self.part2Crop
+                    self.InspectionImages[2] = self.part3Crop
+                    self.InspectionImages[3] = self.part4Crop
+                    self.InspectionImages[4] = self.part5Crop
+
+                if self.InstructionCode == 0:
+                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
+                    if self.InstructionCode_prev == 0:
+                        # print("Already processed Set Inspection command, skipping...")
+                        pass  # Skip, already processed
+                    else:
+                        self.InstructionCode_prev = self.InstructionCode
+
+                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
+
+                        self.InspectionResult_SetID_OK = [0, 0, 0, 0, 0]
+                        self.InspectionResult_SetID_NG = [0, 0, 0, 0, 0]
+
+                        self.InspectionResult_TapeID_OK = [0, 0, 0, 0, 0]
+                        self.InspectionResult_TapeID_NG = [0, 0, 0, 0, 0]
+
+                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+                        self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
+                        self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
+                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
+                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
+
+                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID_int}")
+                        print(f"Inspection Result Set ID: {self.InspectionResult_SetID_OK_int}")
+                        print(f"Inspection Result Tape ID: {self.InspectionResult_TapeID_OK_int}")
+                        
+                        # Send all zeros to the holding registers
+                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
+                        print("All zeros Emitted to Holding Registers")
+                        #wait
+                        time.sleep(0.5)
+
+                # 1 = Set Inspection
+                if self.InstructionCode == 1 or self.inspection_config.doInspection is True:
+                    if self.InstructionCode_prev == 1:
+                        # print("Already processed Set Inspection command, skipping...")
+                        pass
+                    else:
+                        self.InstructionCode_prev = self.InstructionCode
+                        self.inspection_config.doInspection = False
+
+                        # check whether set part is set correctly
+                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
+
+                        for i, crop in enumerate(parts):
+
+                            self.SetExistInspectionImages[i] = cv2.resize(crop, (512, 512))
+                            self.SetCorrectInspectionImages[i] = crop
+
+                            SetPartExist_result = self.AGCJ59JRH_setDetectionModel(self.SetExistInspectionImages[i],stream=True, verbose=False)
+                            self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
+
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i] = J59J_Set_Check(self.SetCorrectInspectionImages[i], self.AGCJ59JRH_SET_LEFT, self.AGCJ59JRH_SET_RIGHT)
+                        (
+                            self.part1Crop,
+                            self.part2Crop,
+                            self.part3Crop,
+                            self.part4Crop,
+                            self.part5Crop,
+                        ) = self.SetCorrectInspectionImages_result[:5]
+
+                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+                        #wait t=1 sec
+                        time.sleep(0.5)
+
+                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
+                        self.InspectionResult_SetID_OK = np.flip(self.InspectionResult_SetID_OK)
+
+                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
+                        self.InspectionResult_SetID_OK = [int(x) for x in self.InspectionResult_SetID_OK]
+                        self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]
+
+                        for i, d in enumerate(self.InspectionResult_DetectionID):
+                            if d == 1:
+                                self.InspectionResult_SetID_OK[i] = 0
+                                self.InspectionResult_SetID_NG[i] = 0
+
+                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+                        self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
+                        self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
+
+                        #Emit the inspection result and serial number to holding registers
+                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"],[self.serialNumber_front])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
+                        print("Inspection Result Set ID Emitted")
+                        time.sleep(0.5)
+
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        # Save corrected set images for training (compact & safe)
+                        save_dir = "./aikensa/training_images/set"
+                        os.makedirs(save_dir, exist_ok=True)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        for i, img in enumerate(self.SetCorrectInspectionImages):
+                            if img is None:
+                                continue
+                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
+                            cv2.imwrite(filename, img)
+                            print(f"Saved {filename}")
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        
+
+                # 2 = Tape Inspection
+                if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
+                    if self.InstructionCode_prev == 2:
+                        pass
+                        print("Already processed Tape Inspection command, skipping..."  )
+                    else:
+                    # if self.InstructionCode == 2:
+                        self.InstructionCode_prev = self.InstructionCode
+                        self.inspection_config.doTapeInspection = False
+
+                        # check whether set part is set correctly
+                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
+                        
+                        N_PARTS = 5
+                        # ensure these are indexable
+                        self.TapeExistInspectionImages        = [None] * N_PARTS
+                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
+                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
+                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
+                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
+
+                        for i, crop in enumerate(parts):
+
+                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
+                            self.TapeCorrectInspectionImages[i] = crop
+                            TapePartExist_result = self.AGCJ59JRH_setDetectionModel(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
+                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J59J_Tape_Check(self.TapeCorrectInspectionImages[i], self.AGCJ59JRH_TAPE_LEFT, self.AGCJ59JRH_TAPE_RIGHT, self.AGCJ59JRH_TAPE_CENTER)
+
+
+                        (
+                            self.part1Crop,
+                            self.part2Crop,
+                            self.part3Crop,
+                            self.part4Crop,
+                            self.part5Crop,
+                        ) = self.TapeCorrectInspectionImages_result[:5]
+
+                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+                        #wait t=1 sec
+                        time.sleep(0.5)
+
+                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
+                        print (self.InspectionResult_DetectionID)
+                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
+
+                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
+                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
+                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
+
+                        for i, d in enumerate(self.InspectionResult_DetectionID):
+                            if d == 1:
+                                self.InspectionResult_TapeID_OK[i] = 0
+                                self.InspectionResult_TapeID_NG[i] = 0
+
+                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
+                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
+                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
+
+                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
+                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
+
+                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
+
+ 
+
+                        #Emit the inspection result and serial number to holding registers
+                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
+                        print("Inspection Result Tape ID Emitted")
+                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
+                        time.sleep(0.5)
+
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        # Save corrected tape images for training (compact & safe)
+                        save_dir = "./aikensa/training_images/tape"
+                        os.makedirs(save_dir, exist_ok=True)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        for i, img in enumerate(self.TapeCorrectInspectionImages):
+                            if img is None:
+                                continue
+                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
+                            cv2.imwrite(filename, img)
+                            print(f"Saved {filename}")
+                        #######(SAVE IMAGES FOR TRAINING)##########
                         
                 #emit the ethernet 
                 self.today_numofPart_signal.emit(self.inspection_config.today_numofPart)
@@ -720,7 +998,6 @@ class InspectionThread(QThread):
                         self.InstructionCode_prev = self.InstructionCode
 
                         self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-                        # self.InspectionResult_SetID_OK = random_list(5) #Dummy values for testing
                         self.InspectionResult_SetID_OK = [1, 1, 1, 1, 1]
                         self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]  # Invert the OK values for NG
                         
@@ -769,7 +1046,6 @@ class InspectionThread(QThread):
                     else:
                         self.InstructionCode_prev = self.InstructionCode
                         self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-                        # self.InspectionResult_TapeID_OK = random_list(5) #Dummy values for testing
                         self.InspectionResult_TapeID_OK = [1, 1, 1, 1, 1]
                         self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
 
@@ -818,6 +1094,7 @@ class InspectionThread(QThread):
                 self.AGC_InspectionStatus.emit(self.InspectionStatus)
             #J59 JRH Inspection
             if self.inspection_config.widget == 5:
+
                 self.handle_adjustments_and_counterreset()
                 self.part1Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part1_Crop", out_w=1771, out_h=121)
                 self.part2Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part2_Crop", out_w=1771, out_h=121)
@@ -842,29 +1119,31 @@ class InspectionThread(QThread):
                     self.InspectionImages[3] = self.part4Crop
                     self.InspectionImages[4] = self.part5Crop
 
-                if self.inspection_config.doInspection is True:
-                    self.inspection_config.doInspection = False
-                    #Save images, time and part number to ./training_images
-                    if not os.path.exists("./aikensa/training_images"):
-                        os.makedirs("./aikensa/training_images")
-                        #Use time for the file name
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    #save InspectionImages with cv2.write
-                    self.InspectionImages[0] = self.part1Crop
-                    self.InspectionImages[1] = self.part2Crop
-                    self.InspectionImages[2] = self.part3Crop
-                    self.InspectionImages[3] = self.part4Crop
-                    self.InspectionImages[4] = self.part5Crop
+                # #save image in case of button press (manual user input)
+                # if self.inspection_config.doInspection is True:
+                #     self.inspection_config.doInspection = False
+                #     #Save images, time and part number to ./training_images
+                #     if not os.path.exists("./aikensa/training_images"):
+                #         os.makedirs("./aikensa/training_images")
+                #         #Use time for the file name
+                #     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                #     #save InspectionImages with cv2.write
+                #     self.InspectionImages[0] = self.part1Crop
+                #     self.InspectionImages[1] = self.part2Crop
+                #     self.InspectionImages[2] = self.part3Crop
+                #     self.InspectionImages[3] = self.part4Crop
+                #     self.InspectionImages[4] = self.part5Crop
 
-                    for i, img in enumerate(self.InspectionImages):
-                        if img is not None:
-                            filename = f"./aikensa/training_images/part{i+1}_{timestamp}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
+                #     for i, img in enumerate(self.InspectionImages):
+                #         if img is not None:
+                #             filename = f"./aikensa/training_images/part{i+1}_{timestamp}.jpg"
+                #             cv2.imwrite(filename, img)
+                #             print(f"Saved {filename}")
 
                 if self.InstructionCode == 0:
                     self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
                     if self.InstructionCode_prev == 0:
+                        # print("Already processed Set Inspection command, skipping...")
                         pass  # Skip, already processed
                     else:
                         self.InstructionCode_prev = self.InstructionCode
@@ -902,52 +1181,43 @@ class InspectionThread(QThread):
                         time.sleep(0.5)
 
                 # 1 = Set Inspection
-                if self.InstructionCode == 1:
+                if self.InstructionCode == 1 or self.inspection_config.doInspection is True:
                     if self.InstructionCode_prev == 1:
+                        # print("Already processed Set Inspection command, skipping...")
                         pass
                     else:
                         self.InstructionCode_prev = self.InstructionCode
-                        #resize to 512 512
-                        # self.SetInspectionImages[0] = cv2.resize(self.part1Crop, (512, 512))
-                        # self.SetInspectionImages[1] = cv2.resize(self.part2Crop, (512, 512))
-                        # self.SetInspectionImages[2] = cv2.resize(self.part3Crop, (512, 512))
-                        # self.SetInspectionImages[3] = cv2.resize(self.part4Crop, (512, 512))
-                        # self.SetInspectionImages[4] = cv2.resize(self.part5Crop, (512, 512))
+                        self.inspection_config.doInspection = False
 
-                        
-                        # self.InspectionResult_SetID_OK[0] = self.AGCJ59JRH_setDetectionModel(cv2.cvtColor(self.SetInspectionImages[0], cv2.COLOR_BGR2RGB), stream=True, verbose=False)
-                        # self.InspectionResult_SetID_OK[1] = self.AGCJ59JRH_setDetectionModel(cv2.cvtColor(self.SetInspectionImages[1], cv2.COLOR_BGR2RGB), stream=True, verbose=False)  
-                        # self.InspectionResult_SetID_OK[2] = self.AGCJ59JRH_setDetectionModel(cv2.cvtColor(self.SetInspectionImages[2], cv2.COLOR_BGR2RGB), stream=True, verbose=False)
-                        # self.InspectionResult_SetID_OK[3] = self.AGCJ59JRH_setDetectionModel(cv2.cvtColor(self.SetInspectionImages[3], cv2.COLOR_BGR2RGB), stream=True, verbose=False)
-                        # self.InspectionResult_SetID_OK[4] = self.AGCJ59JRH_setDetectionModel(cv2.cvtColor(self.SetInspectionImages[4], cv2.COLOR_BGR2RGB), stream=True, verbose=False)
-                        
-                        # self.InspectionResult_SetID_OK[0] = list(self.InspectionResult_SetID_OK[0])[0].probs.data.argmax().item()
-                        # self.InspectionResult_SetID_OK[1] = list(self.InspectionResult_SetID_OK[1])[0].probs.data.argmax().item()
-                        # self.InspectionResult_SetID_OK[2] = list(self.InspectionResult_SetID_OK[2])[0].probs.data.argmax().item()
-                        # self.InspectionResult_SetID_OK[3] = list(self.InspectionResult_SetID_OK[3])[0].probs.data.argmax().item()
-                        # self.InspectionResult_SetID_OK[4] = list(self.InspectionResult_SetID_OK[4])[0].probs.data.argmax().item()
+                        # check whether set part is set correctly
+                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
 
+                        for i, crop in enumerate(parts):
 
-                        for i, crop in enumerate([
-                            self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop
-                        ]):
-                            # Resize and store
-                            self.SetInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            # Run detection model
-                            result = self.AGCJ59JRH_setDetectionModel(
-                                self.SetInspectionImages[i],
-                                stream=True,
-                                verbose=False
-                            )
-                            # Extract the argmax result
-                            self.InspectionResult_DetectionID[i] = list(result)[0].probs.data.argmax().item()
-                        
+                            self.SetExistInspectionImages[i] = cv2.resize(crop, (512, 512))
+                            self.SetCorrectInspectionImages[i] = crop
+
+                            SetPartExist_result = self.AGCJ59JRH_setDetectionModel(self.SetExistInspectionImages[i],stream=True, verbose=False)
+                            self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
+
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i] = J59J_Set_Check(self.SetCorrectInspectionImages[i], self.AGCJ59JRH_SET_LEFT, self.AGCJ59JRH_SET_RIGHT)
+                        (
+                            self.part1Crop,
+                            self.part2Crop,
+                            self.part3Crop,
+                            self.part4Crop,
+                            self.part5Crop,
+                        ) = self.SetCorrectInspectionImages_result[:5]
+
+                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+                        #wait t=1 sec
+                        time.sleep(0.5)
+
                         self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
+                        self.InspectionResult_SetID_OK = np.flip(self.InspectionResult_SetID_OK)
 
                         self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        # self.InspectionResult_DetectionID = [1 - x for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_SetID_OK = self.InspectionResult_DetectionID.copy()
-                        self.InspectionResult_SetID_OK = [1 - x for x in self.InspectionResult_DetectionID]
+                        self.InspectionResult_SetID_OK = [int(x) for x in self.InspectionResult_SetID_OK]
                         self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]
 
                         for i, d in enumerate(self.InspectionResult_DetectionID):
@@ -959,10 +1229,6 @@ class InspectionThread(QThread):
                         self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
                         self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
 
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Set OK ID: {self.InspectionResult_SetID_OK}")
-                        print(f"Inspection Result Set NG ID: {self.InspectionResult_SetID_NG}")
-
                         #Emit the inspection result and serial number to holding registers
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"],[self.serialNumber_front])
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
@@ -971,46 +1237,88 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
                         print("Inspection Result Set ID Emitted")
-                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
                         time.sleep(0.5)
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                        # print("0 State Code Emitted, ready for next instruction")
 
-                        if not os.path.exists("./aikensa/training_images/set"):
-                            os.makedirs("./aikensa/training_images/set")
-                            #Use time for the file name
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        # Save corrected set images for training (compact & safe)
+                        save_dir = "./aikensa/training_images/set"
+                        os.makedirs(save_dir, exist_ok=True)
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        #save InspectionImages with cv2.write
-                        self.InspectionImages[0] = self.part1Crop
-                        self.InspectionImages[1] = self.part2Crop
-                        self.InspectionImages[2] = self.part3Crop
-                        self.InspectionImages[3] = self.part4Crop
-                        self.InspectionImages[4] = self.part5Crop
-
-                        for i, img in enumerate(self.InspectionImages):
-                            if img is not None:
-                                filename = f"./aikensa/training_images/set/part{i+1}_{timestamp}.jpg"
-                                cv2.imwrite(filename, img)
-                                print(f"Saved {filename}")
+                        for i, img in enumerate(self.SetCorrectInspectionImages):
+                            if img is None:
+                                continue
+                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
+                            cv2.imwrite(filename, img)
+                            print(f"Saved {filename}")
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        
 
                 # 2 = Tape Inspection
-                if self.InstructionCode == 2:
+                if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
                     if self.InstructionCode_prev == 2:
                         pass
+                        print("Already processed Tape Inspection command, skipping..."  )
                     else:
+                    # if self.InstructionCode == 2:
                         self.InstructionCode_prev = self.InstructionCode
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-                        # self.InspectionResult_TapeID_OK = random_list(5) #Dummy values for testing
-                        self.InspectionResult_TapeID_OK = [1, 1, 1, 1, 1]
+                        self.inspection_config.doTapeInspection = False
+
+                        # check whether set part is set correctly
+                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
+                        
+                        N_PARTS = 5
+                        # ensure these are indexable
+                        self.TapeExistInspectionImages        = [None] * N_PARTS
+                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
+                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
+                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
+                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
+
+                        for i, crop in enumerate(parts):
+
+                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
+                            self.TapeCorrectInspectionImages[i] = crop
+                            TapePartExist_result = self.AGCJ59JRH_setDetectionModel(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
+                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J59J_Tape_Check(self.TapeCorrectInspectionImages[i], self.AGCJ59JRH_TAPE_LEFT, self.AGCJ59JRH_TAPE_RIGHT, self.AGCJ59JRH_TAPE_CENTER)
+
+
+                        (
+                            self.part1Crop,
+                            self.part2Crop,
+                            self.part3Crop,
+                            self.part4Crop,
+                            self.part5Crop,
+                        ) = self.TapeCorrectInspectionImages_result[:5]
+
+                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+                        #wait t=1 sec
+                        time.sleep(0.5)
+
+                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
+                        print (self.InspectionResult_DetectionID)
+                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
+
+                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
+                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
                         self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
+
+                        for i, d in enumerate(self.InspectionResult_DetectionID):
+                            if d == 1:
+                                self.InspectionResult_TapeID_OK[i] = 0
+                                self.InspectionResult_TapeID_NG[i] = 0
+
+                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
+                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
+                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
 
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
                         self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
                         self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
 
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
+                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
+
+ 
 
                         #Emit the inspection result and serial number to holding registers
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
@@ -1022,25 +1330,19 @@ class InspectionThread(QThread):
                         print("Inspection Result Tape ID Emitted")
                         # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
                         time.sleep(0.5)
-                        # self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                        # print("0 State Code Emitted, ready for next instruction")
 
-                        if not os.path.exists("./aikensa/training_images/tape"):
-                            os.makedirs("./aikensa/training_images/tape")
-                            #Use time for the file name
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        # Save corrected tape images for training (compact & safe)
+                        save_dir = "./aikensa/training_images/tape"
+                        os.makedirs(save_dir, exist_ok=True)
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        #save InspectionImages with cv2.write
-                        self.InspectionImages[0] = self.part1Crop
-                        self.InspectionImages[1] = self.part2Crop
-                        self.InspectionImages[2] = self.part3Crop
-                        self.InspectionImages[3] = self.part4Crop
-                        self.InspectionImages[4] = self.part5Crop
-
-                        for i, img in enumerate(self.InspectionImages):
-                            if img is not None:
-                                filename = f"./aikensa/training_images/tape/part{i+1}_{timestamp}.jpg"
-                                cv2.imwrite(filename, img)
-                                print(f"Saved {filename}")
+                        for i, img in enumerate(self.TapeCorrectInspectionImages):
+                            if img is None:
+                                continue
+                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
+                            cv2.imwrite(filename, img)
+                            print(f"Saved {filename}")
+                        #######(SAVE IMAGES FOR TRAINING)##########
                         
                 #emit the ethernet 
                 self.today_numofPart_signal.emit(self.inspection_config.today_numofPart)
@@ -1323,17 +1625,13 @@ class InspectionThread(QThread):
 
     def initialize_model(self):
 
+        self.AGCJ59JRH_SET_DETECT = YOLO("./aikensa/models/AGCJ59JRH/SET/AGCJ59JRH_SET_DETECT.pt")
+        self.AGCJ59JRH_SET_LEFT = YOLO("./aikensa/models/AGCJ59JRH/SET/AGCJ59JRH_SET_LEFT.pt")
+        self.AGCJ59JRH_SET_RIGHT = YOLO("./aikensa/models/AGCJ59JRH/SET/AGCJ59JRH_SET_RIGHT.pt")
+
         self.AGCJ59JRH_TAPE_LEFT = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_LEFT.pt")
         self.AGCJ59JRH_TAPE_CENTER = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_CENTER.pt")
         self.AGCJ59JRH_TAPE_RIGHT = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_RIGHT.pt")
-
-        self.AGCJ59JRH_SET_LEFT = None
-        self.AGCJ59JRH_SET_CENTER = None
-        self.AGCJ59JRH_SET_RIGHT = None
-
-        self.AGCJ59JRH_partDetectionModel = YOLO("")
-
-
 
 
         self.AGCJ30RH_partDetectionModel = None

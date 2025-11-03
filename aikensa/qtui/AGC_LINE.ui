@@ -540,7 +540,7 @@
     <property name="geometry">
      <rect>
       <x>15</x>
-      <y>955</y>
+      <y>960</y>
       <width>221</width>
       <height>61</height>
      </rect>
@@ -562,8 +562,8 @@
      <string notr="true">color: rgb(238, 238, 236);</string>
     </property>
     <property name="text">
-     <string>検査実施 
-Inspect</string>
+     <string>セット検査実施 
+Set Inspection</string>
     </property>
     <property name="checkable">
      <bool>false</bool>
@@ -1323,6 +1323,39 @@ background-color: rgb(238, 238, 236);</string>
      <set>Qt::AlignCenter</set>
     </property>
    </widget>
+   <widget class="QPushButton" name="InspectTapeButton">
+    <property name="geometry">
+     <rect>
+      <x>260</x>
+      <y>960</y>
+      <width>221</width>
+      <height>61</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Ubuntu Mono</family>
+      <pointsize>17</pointsize>
+      <weight>75</weight>
+      <italic>false</italic>
+      <bold>true</bold>
+      <stylestrategy>PreferAntialias</stylestrategy>
+     </font>
+    </property>
+    <property name="autoFillBackground">
+     <bool>false</bool>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color: rgb(238, 238, 236);</string>
+    </property>
+    <property name="text">
+     <string>テープ検査実施 
+Tape Inspection</string>
+    </property>
+    <property name="checkable">
+     <bool>false</bool>
+    </property>
+   </widget>
    <zorder>label_12</zorder>
    <zorder>line_1</zorder>
    <zorder>line_2</zorder>
@@ -1363,6 +1396,7 @@ background-color: rgb(238, 238, 236);</string>
    <zorder>furyou_plus</zorder>
    <zorder>label_5</zorder>
    <zorder>status_PLC</zorder>
+   <zorder>InspectTapeButton</zorder>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">

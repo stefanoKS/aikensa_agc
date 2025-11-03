@@ -66,6 +66,8 @@
 134: return_AIKENSA_KensaResults_set_partexist
 135: return_AIKENSA_KensaResults_set_results_OK
 136: return_AIKENSA_KensaResults_set_results_NG
+137: return_pallet_Error
+# If ERROR set to 1
 
 154: return_AIKENSA_KensaResults_tapeinspection_partexist
 155: return_AIKENSA_KensaResults_tapeinspection_results_OK

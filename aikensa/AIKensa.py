@@ -187,13 +187,10 @@ class AIKensa(QMainWindow):
                 button_main_menu.clicked.connect(lambda: self._set_inspection_params(self.inspection_thread, 'widget', 0))
 
         # Radio button for nichijoutenken
-        self.connect_radio_to_button_visibility(
-            widget_index=5,
-            radio_name="nichijoutenken_radio",        
-            target_button_name="select_J30LH",
-            inspection_param="nichijoutenken_mode"  
-        )
-
+        self.connect_radio_to_button_visibility(widget_index=5, radio_name="nichijoutenken_radio", target_button_name="select_J30LH", inspection_param="nichijoutenken_mode")
+        self.connect_radio_to_button_visibility(widget_index=5, radio_name="nichijoutenken_radio", target_button_name="select_J30RH", inspection_param="nichijoutenken_mode")
+        self.connect_radio_to_button_visibility(widget_index=5, radio_name="nichijoutenken_radio", target_button_name="select_J59JLH", inspection_param="nichijoutenken_mode")
+        self.connect_radio_to_button_visibility(widget_index=5, radio_name="nichijoutenken_radio", target_button_name="select_J59JRH", inspection_param="nichijoutenken_mode")
 
         self.setCentralWidget(self.stackedWidget)
         self.showFullScreen()

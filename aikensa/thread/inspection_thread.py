@@ -31,6 +31,9 @@ from aikensa.scripts.scripts_img_processing import crop_parts
 from aikensa.parts_config.AGC.J59J.J59J_SET import J59J_Set_Check as J59J_Set_Check
 from aikensa.parts_config.AGC.J59J.J59J_KENSA import J59J_Tape_Check as J59J_Tape_Check
 
+from aikensa.parts_config.AGC.J30.J30_SET import J30_Set_Check as J30_Set_Check
+from aikensa.parts_config.AGC.J30.J30_KENSA import J30_Tape_Check as J30_Tape_Check
+
 @dataclass
 class InspectionConfig:
     widget: int = 0
@@ -280,7 +283,7 @@ class InspectionThread(QThread):
         self.partNumber = reg_dict.get(50, 0)
 
         # DEBUG
-        # self.partNumber = 4
+        self.partNumber = 4
 
         self.serialNumber_front = reg_dict.get(62, 0)
         self.serialNumber_back  = reg_dict.get(63, 0)
@@ -430,6 +433,7 @@ class InspectionThread(QThread):
                 self.camFrame_ic4 = cv2.rotate(self.camFrame_ic4, cv2.ROTATE_180)
                 #invert rgb to bgr
                 self.camFrame_ic4 = cv2.cvtColor(self.camFrame_ic4, cv2.COLOR_BGR2RGB)
+
             #J30 LH Inspection
             if self.inspection_config.widget == 8:
                 self.handle_adjustments_and_counterreset()
@@ -487,7 +491,7 @@ class InspectionThread(QThread):
                             SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
 
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i] = J30J_Set_Check(self.SetCorrectInspectionImages[i], self.AGCJ30RH_SET_LEFT_model, self.AGCJ30RH_SET_RIGHT_model)
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i] = J30_Set_Check(self.SetCorrectInspectionImages[i], self.AGCJ30RH_SET_LEFT_model, self.AGCJ30RH_SET_RIGHT_model)
                         (
                             self.part1Crop,
                             self.part2Crop,
@@ -567,7 +571,7 @@ class InspectionThread(QThread):
                             self.TapeCorrectInspectionImages[i] = crop
                             TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
                             self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J30J_Tape_Check(self.TapeCorrectInspectionImages[i], self.AGCJ30RH_TAPE_LEFT_model, self.AGCJ30RH_TAPE_RIGHT_model, self.AGCJ30RH_TAPE_CENTER_model)
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J30_Tape_Check(self.TapeCorrectInspectionImages[i], self.AGCJ30RH_TAPE_LEFT_model, self.AGCJ30RH_TAPE_RIGHT_model, self.AGCJ30RH_TAPE_CENTER_model)
 
 
                         (

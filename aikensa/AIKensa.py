@@ -6,7 +6,7 @@ from enum import Enum
 import time
 
 from PyQt5 import QtCore
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QStackedWidget, QLabel, QSlider, QMainWindow, QWidget, QCheckBox, QShortcut, QLineEdit
+from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QStackedWidget, QLabel, QSlider, QMainWindow, QWidget, QCheckBox, QShortcut, QLineEdit, QRadioButton
 from PyQt5.uic import loadUi
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QCoreApplication
 from PyQt5.QtGui import QImage, QPixmap, QKeySequence
@@ -185,6 +185,15 @@ class AIKensa(QMainWindow):
                 button_main_menu.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(0))
                 button_main_menu.clicked.connect(lambda: self._set_calib_params(self.calibration_thread, 'widget', 0))
                 button_main_menu.clicked.connect(lambda: self._set_inspection_params(self.inspection_thread, 'widget', 0))
+
+        # Radio button for nichijoutenken
+        self.connect_radio_to_button_visibility(
+            widget_index=5,
+            radio_name="nichijoutenken_radio",        
+            target_button_name="select_J30LH",
+            inspection_param="nichijoutenken_mode"  
+        )
+
 
         self.setCentralWidget(self.stackedWidget)
         self.showFullScreen()
@@ -393,6 +402,38 @@ class AIKensa(QMainWindow):
         if partNumber != 0:
             if partNumber_label:
                 partNumber_label.setText(label)
+
+
+    def connect_radio_to_button_visibility(self,
+                                       widget_index: int,
+                                       radio_name: str,
+                                       target_button_name: str,
+                                       inspection_param: str | None = None):
+        """
+        - Shows/hides `target_button_name` based on `radio_name` checked state.
+        - If `inspection_param` is provided, forwards the checked state to self._set_inspection_params(...)
+        """
+        widget = self.stackedWidget.widget(widget_index)
+        radio  = widget.findChild(QRadioButton, radio_name)
+        target = widget.findChild(QPushButton, target_button_name)
+
+        if not radio or not target:
+            # Silently ignore if either control isn't present on this widget
+            return
+
+        # Set initial visibility to match current radio state
+        target.setVisible(radio.isChecked())
+
+        # Update visibility on toggle
+        radio.toggled.connect(lambda checked, btn=target: btn.setVisible(checked))
+
+        # Optionally propagate the state to your inspection thread
+        if inspection_param:
+            radio.toggled.connect(
+                lambda checked,
+                    thread=self.inspection_thread,
+                    param=inspection_param: self._set_inspection_params(thread, param, checked)
+            )
 
 def main():
     app = QApplication(sys.argv)

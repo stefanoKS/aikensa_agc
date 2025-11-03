@@ -1356,6 +1356,155 @@ Tape Inspection</string>
      <bool>false</bool>
     </property>
    </widget>
+   <widget class="QRadioButton" name="nichijoutenken_radio">
+    <property name="geometry">
+     <rect>
+      <x>750</x>
+      <y>850</y>
+      <width>201</width>
+      <height>71</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>19</pointsize>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">background-color: rgb(51, 209, 122);</string>
+    </property>
+    <property name="text">
+     <string>　日常点検</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="select_J30LH">
+    <property name="geometry">
+     <rect>
+      <x>750</x>
+      <y>930</y>
+      <width>91</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Ubuntu Mono</family>
+      <pointsize>17</pointsize>
+      <weight>75</weight>
+      <italic>false</italic>
+      <bold>true</bold>
+      <stylestrategy>PreferAntialias</stylestrategy>
+     </font>
+    </property>
+    <property name="autoFillBackground">
+     <bool>false</bool>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">background-color: rgb(237, 51, 59);</string>
+    </property>
+    <property name="text">
+     <string>J30 LH</string>
+    </property>
+    <property name="checkable">
+     <bool>false</bool>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="select_J30RH">
+    <property name="geometry">
+     <rect>
+      <x>750</x>
+      <y>960</y>
+      <width>91</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Ubuntu Mono</family>
+      <pointsize>17</pointsize>
+      <weight>75</weight>
+      <italic>false</italic>
+      <bold>true</bold>
+      <stylestrategy>PreferAntialias</stylestrategy>
+     </font>
+    </property>
+    <property name="autoFillBackground">
+     <bool>false</bool>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">background-color: rgb(237, 51, 59);</string>
+    </property>
+    <property name="text">
+     <string>J30 RH</string>
+    </property>
+    <property name="checkable">
+     <bool>false</bool>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="select_J59JRH">
+    <property name="geometry">
+     <rect>
+      <x>860</x>
+      <y>960</y>
+      <width>91</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Ubuntu Mono</family>
+      <pointsize>17</pointsize>
+      <weight>75</weight>
+      <italic>false</italic>
+      <bold>true</bold>
+      <stylestrategy>PreferAntialias</stylestrategy>
+     </font>
+    </property>
+    <property name="autoFillBackground">
+     <bool>false</bool>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">background-color: rgb(255, 163, 72);</string>
+    </property>
+    <property name="text">
+     <string>J59J RH</string>
+    </property>
+    <property name="checkable">
+     <bool>false</bool>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="select_J59JLH">
+    <property name="geometry">
+     <rect>
+      <x>860</x>
+      <y>930</y>
+      <width>91</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Ubuntu Mono</family>
+      <pointsize>17</pointsize>
+      <weight>75</weight>
+      <italic>false</italic>
+      <bold>true</bold>
+      <stylestrategy>PreferAntialias</stylestrategy>
+     </font>
+    </property>
+    <property name="autoFillBackground">
+     <bool>false</bool>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">background-color: rgb(255, 163, 72);</string>
+    </property>
+    <property name="text">
+     <string>J59J LH</string>
+    </property>
+    <property name="checkable">
+     <bool>false</bool>
+    </property>
+   </widget>
    <zorder>label_12</zorder>
    <zorder>line_1</zorder>
    <zorder>line_2</zorder>
@@ -1397,6 +1546,11 @@ Tape Inspection</string>
    <zorder>label_5</zorder>
    <zorder>status_PLC</zorder>
    <zorder>InspectTapeButton</zorder>
+   <zorder>nichijoutenken_radio</zorder>
+   <zorder>select_J30LH</zorder>
+   <zorder>select_J30RH</zorder>
+   <zorder>select_J59JRH</zorder>
+   <zorder>select_J59JLH</zorder>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
@@ -1404,7 +1558,7 @@ Tape Inspection</string>
      <x>0</x>
      <y>0</y>
      <width>1920</width>
-     <height>21</height>
+     <height>22</height>
     </rect>
    </property>
   </widget>

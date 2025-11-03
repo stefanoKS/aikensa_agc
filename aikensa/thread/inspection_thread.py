@@ -61,6 +61,8 @@ class InspectionConfig:
     today_numofPart: list = field(default_factory=lambda: [[0, 0] for _ in range(30)])
     current_numofPart: list = field(default_factory=lambda: [[0, 0] for _ in range(30)])
 
+    nichijoutenken_mode: bool = False
+
 class InspectionThread(QThread):
     part1Cam = pyqtSignal(QImage)
     part2Cam = pyqtSignal(QImage)
@@ -461,37 +463,8 @@ class InspectionThread(QThread):
                         pass  # Skip, already processed
                     else:
                         self.InstructionCode_prev = self.InstructionCode
-
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-
-                        self.InspectionResult_SetID_OK = [0, 0, 0, 0, 0]
-                        self.InspectionResult_SetID_NG = [0, 0, 0, 0, 0]
-
-                        self.InspectionResult_TapeID_OK = [0, 0, 0, 0, 0]
-                        self.InspectionResult_TapeID_NG = [0, 0, 0, 0, 0]
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
-                        self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID_int}")
-                        print(f"Inspection Result Set ID: {self.InspectionResult_SetID_OK_int}")
-                        print(f"Inspection Result Tape ID: {self.InspectionResult_TapeID_OK_int}")
-                        
-                        # Send all zeros to the holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                        print("All zeros Emitted to Holding Registers")
-                        #wait
+                        self._reset_inspection_results()
+                        self._emit_zero_registers()
                         time.sleep(0.5)
 
                 # 1 = Set Inspection
@@ -511,10 +484,10 @@ class InspectionThread(QThread):
                             self.SetExistInspectionImages[i] = cv2.resize(crop, (512, 512))
                             self.SetCorrectInspectionImages[i] = crop
 
-                            SetPartExist_result = self.AGCJ59JRH_setDetectionModel(self.SetExistInspectionImages[i],stream=True, verbose=False)
+                            SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
 
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i] = J59J_Set_Check(self.SetCorrectInspectionImages[i], self.AGCJ59JRH_SET_LEFT, self.AGCJ59JRH_SET_RIGHT)
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i] = J30J_Set_Check(self.SetCorrectInspectionImages[i], self.AGCJ30RH_SET_LEFT_model, self.AGCJ30RH_SET_RIGHT_model)
                         (
                             self.part1Crop,
                             self.part2Crop,
@@ -592,9 +565,9 @@ class InspectionThread(QThread):
 
                             self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
                             self.TapeCorrectInspectionImages[i] = crop
-                            TapePartExist_result = self.AGCJ59JRH_setDetectionModel(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
+                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
                             self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J59J_Tape_Check(self.TapeCorrectInspectionImages[i], self.AGCJ59JRH_TAPE_LEFT, self.AGCJ59JRH_TAPE_RIGHT, self.AGCJ59JRH_TAPE_CENTER)
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J30J_Tape_Check(self.TapeCorrectInspectionImages[i], self.AGCJ30RH_TAPE_LEFT_model, self.AGCJ30RH_TAPE_RIGHT_model, self.AGCJ30RH_TAPE_CENTER_model)
 
 
                         (
@@ -1625,91 +1598,29 @@ class InspectionThread(QThread):
 
     def initialize_model(self):
 
-        self.AGCJ59JRH_SET_DETECT = YOLO("./aikensa/models/AGCJ59JRH/SET/AGCJ59JRH_SET_DETECT.pt")
-        self.AGCJ59JRH_SET_LEFT = YOLO("./aikensa/models/AGCJ59JRH/SET/AGCJ59JRH_SET_LEFT.pt")
-        self.AGCJ59JRH_SET_RIGHT = YOLO("./aikensa/models/AGCJ59JRH/SET/AGCJ59JRH_SET_RIGHT.pt")
+        self.AGC_ALL_WS_DETECTION_model = YOLO("./aikensa/models/WS_ALL_DETECTION.pt")
 
-        self.AGCJ59JRH_TAPE_LEFT = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_LEFT.pt")
-        self.AGCJ59JRH_TAPE_CENTER = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_CENTER.pt")
-        self.AGCJ59JRH_TAPE_RIGHT = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_RIGHT.pt")
+        self.AGCJ59JRH_SET_LEFT_model = YOLO("./aikensa/models/AGCJ59JRH/SET/AGCJ59JRH_SET_LEFT.pt")
+        self.AGCJ59JRH_SET_RIGHT_model = YOLO("./aikensa/models/AGCJ59JRH/SET/AGCJ59JRH_SET_RIGHT.pt")
 
+        self.AGCJ59JRH_TAPE_LEFT_model = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_LEFT.pt")
+        self.AGCJ59JRH_TAPE_CENTER_model = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_CENTER.pt")
+        self.AGCJ59JRH_TAPE_RIGHT_model = YOLO("./aikensa/models/AGCJ59JRH/TAPE/AGCJ59JRH_TAPE_RIGHT.pt")
 
-        self.AGCJ30RH_partDetectionModel = None
-        self.AGCJ30RH_setDetectionModel = None
+        self.AGCJ30LH_SET_LEFT_model = YOLO("./aikensa/models/AGCJ30LH/SET/AGCJ30LH_SET_LEFT.pt")
+        self.AGCJ30LH_SET_RIGHT_model = YOLO("./aikensa/models/AGCJ30LH/SET/AGCJ30LH_SET_RIGHT.pt")
 
-        AGCJ59JLH_partDetectionModel = None
-        AGCJ59JLH_setDetectionModel = None
-        AGCJ59JRH_partDetectionModel = None
-        AGCJ59JRH_setDetectionModel = None
+        self.AGCJ30LH_TAPE_LEFT_model = YOLO("./aikensa/models/AGCJ30LH/TAPE/AGCJ30LH_TAPE_LEFT.pt")
+        self.AGCJ30LH_TAPE_RIGHT_model = YOLO("./aikensa/models/AGCJ30LH/TAPE/AGCJ30LH_TAPE_RIGHT.pt")
+        self.AGCJ30LH_TAPE_CENTER_model = YOLO("./aikensa/models/AGCJ30LH/TAPE/AGCJ30LH_TAPE_CENTER.pt")
 
-        path_AGCJ30LH_partDetectionModel = "./aikensa/models/AGCJ30LH_PART.pt"
-        path_AGCJ30LH_setDetectionModel = "./aikensa/models/AGCJ30LH_SET.pt"
-        path_AGCJ30RH_partDetectionModel = "./aikensa/models/AGCJ30RH_PART.pt"
-        path_AGCJ30RH_setDetectionModel = "./aikensa/models/AGCJ30RH_SET.pt"
+        self.AGCJ30RH_SET_LEFT_model = YOLO("./aikensa/models/AGCJ30RH/SET/AGCJ30RH_SET_LEFT.pt")
+        self.AGCJ30RH_SET_RIGHT_model = YOLO("./aikensa/models/AGCJ30RH/SET/AGCJ30RH_SET_RIGHT.pt")
 
-        path_AGCJ59JLH_partDetectionModel = "./aikensa/models/AGCJ59JLH_PART.pt"
-        path_AGCJ59JLH_setDetectionModel = "./aikensa/models/AGCJ59JLH_SET.pt"
-        path_AGCJ59JRH_partDetectionModel = "./aikensa/models/AGCJ59JRH_PART.pt"
-        path_AGCJ59JRH_setDetectionModel = "./aikensa/models/AGCJ59JRH_SET.pt"
+        self.AGCJ30RH_TAPE_LEFT_model = YOLO("./aikensa/models/AGCJ30RH/TAPE/AGCJ30RH_TAPE_LEFT.pt")
+        self.AGCJ30RH_TAPE_RIGHT_model = YOLO("./aikensa/models/AGCJ30RH/TAPE/AGCJ30RH_TAPE_RIGHT.pt")
+        self.AGCJ30RH_TAPE_CENTER_model = YOLO("./aikensa/models/AGCJ30RH/TAPE/AGCJ30RH_TAPE_CENTER.pt")
 
-        # Initialize models as None if file does not exist, otherwise load the model
-        if os.path.exists(path_AGCJ30LH_partDetectionModel):
-            AGCJ30LH_partDetectionModel = YOLO(path_AGCJ30LH_partDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ30LH_partDetectionModel} does not exist. Initializing as None.")
-            AGCJ30LH_partDetectionModel = None
-
-        if os.path.exists(path_AGCJ30LH_setDetectionModel):
-            AGCJ30LH_setDetectionModel = YOLO(path_AGCJ30LH_setDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ30LH_setDetectionModel} does not exist. Initializing as None.")
-            AGCJ30LH_setDetectionModel = None
-
-        if os.path.exists(path_AGCJ30RH_partDetectionModel):
-            AGCJ30RH_partDetectionModel = YOLO(path_AGCJ30RH_partDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ30RH_partDetectionModel} does not exist. Initializing as None.")
-            AGCJ30RH_partDetectionModel = None
-
-        if os.path.exists(path_AGCJ30RH_setDetectionModel):
-            AGCJ30RH_setDetectionModel = YOLO(path_AGCJ30RH_setDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ30RH_setDetectionModel} does not exist. Initializing as None.")
-            AGCJ30RH_setDetectionModel = None
-
-        if os.path.exists(path_AGCJ59JLH_partDetectionModel):
-            AGCJ59JLH_partDetectionModel = YOLO(path_AGCJ59JLH_partDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ59JLH_partDetectionModel} does not exist. Initializing as None.")
-            AGCJ59JLH_partDetectionModel = None
-
-        if os.path.exists(path_AGCJ59JLH_setDetectionModel):
-            AGCJ59JLH_setDetectionModel = YOLO(path_AGCJ59JLH_setDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ59JLH_setDetectionModel} does not exist. Initializing as None.")
-            AGCJ59JLH_setDetectionModel = None
-
-        if os.path.exists(path_AGCJ59JRH_partDetectionModel):
-            AGCJ59JRH_partDetectionModel = YOLO(path_AGCJ59JRH_partDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ59JRH_partDetectionModel} does not exist. Initializing as None.")
-            AGCJ59JRH_partDetectionModel = None
-
-        if os.path.exists(path_AGCJ59JRH_setDetectionModel):
-            AGCJ59JRH_setDetectionModel = YOLO(path_AGCJ59JRH_setDetectionModel)
-        else:
-            print(f"Model file {path_AGCJ59JRH_setDetectionModel} does not exist. Initializing as None.")
-            AGCJ59JRH_setDetectionModel = None
-
-        self.AGCJ30LH_partDetectionModel = AGCJ30LH_partDetectionModel
-        self.AGCJ30LH_setDetectionModel = AGCJ30LH_setDetectionModel
-        self.AGCJ30RH_partDetectionModel = AGCJ30RH_partDetectionModel
-        self.AGCJ30RH_setDetectionModel = AGCJ30RH_setDetectionModel
-
-        self.AGCJ59JLH_partDetectionModel = AGCJ59JLH_partDetectionModel
-        self.AGCJ59JLH_setDetectionModel = AGCJ59JLH_setDetectionModel
-        self.AGCJ59JRH_partDetectionModel = AGCJ59JRH_partDetectionModel
-        self.AGCJ59JRH_setDetectionModel = AGCJ59JRH_setDetectionModel
 
     def stop(self):
         self.running = False
@@ -1873,3 +1784,37 @@ class InspectionThread(QThread):
         )
 
         return cropped
+
+    def _reset_inspection_results(self):
+        """Reset all inspection result arrays to zeros and cache their 16-bit ints."""
+        zeros = [0] * 5
+        # raw arrays
+        self.InspectionResult_DetectionID = zeros.copy()
+        self.InspectionResult_SetID_OK    = zeros.copy()
+        self.InspectionResult_SetID_NG    = zeros.copy()
+        self.InspectionResult_TapeID_OK   = zeros.copy()
+        self.InspectionResult_TapeID_NG   = zeros.copy()
+        # int encodings
+        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+        self.InspectionResult_SetID_OK_int    = list_to_16bit_int(self.InspectionResult_SetID_OK)
+        self.InspectionResult_SetID_NG_int    = list_to_16bit_int(self.InspectionResult_SetID_NG)
+        self.InspectionResult_TapeID_OK_int   = list_to_16bit_int(self.InspectionResult_TapeID_OK)
+        self.InspectionResult_TapeID_NG_int   = list_to_16bit_int(self.InspectionResult_TapeID_NG)
+
+    def _emit_zero_registers(self):
+        """Emit current zeroed results + serials + state_code to holding registers."""
+        write = self.requestModbusWrite.emit
+        m = self.holding_register_map
+
+        write(m["return_serialNumber_front"], [self.serialNumber_front])
+        write(m["return_serialNumber_back"],  [self.serialNumber_back])
+
+        write(m["return_AIKENSA_KensaResults_set_partexist"],        [self.InspectionResult_DetectionID_int])
+        write(m["return_AIKENSA_KensaResults_set_results_OK"],       [self.InspectionResult_SetID_OK_int])
+        write(m["return_AIKENSA_KensaResults_set_results_NG"],       [self.InspectionResult_SetID_NG_int])
+
+        write(m["return_AIKENSA_KensaResults_tapeinspection_partexist"],  [self.InspectionResult_DetectionID_int])
+        write(m["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
+        write(m["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
+
+        write(m["return_state_code"], [0])

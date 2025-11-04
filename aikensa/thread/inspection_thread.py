@@ -31,8 +31,12 @@ from aikensa.scripts.scripts_img_processing import crop_parts
 from aikensa.parts_config.AGC.J59J.J59J_SET import J59J_Set_Check as J59J_Set_Check
 from aikensa.parts_config.AGC.J59J.J59J_KENSA import J59J_Tape_Check as J59J_Tape_Check
 
-from aikensa.parts_config.AGC.J30.J30_SET import J30_Set_Check as J30_Set_Check
+from aikensa.parts_config.AGC.J30.J30_SET import J30_Check as J30_Check
 from aikensa.parts_config.AGC.J30.J30_KENSA import J30_Tape_Check as J30_Tape_Check
+
+from paddleocr import PaddleOCR
+from typing import Iterable, Any, Optional, Dict, Tuple, List, Callable
+import re
 
 @dataclass
 class InspectionConfig:
@@ -99,6 +103,10 @@ class InspectionThread(QThread):
             self.modbus_thread.holdingUpdated.connect(self.on_holding_update)
             self.requestModbusWrite.connect(self.modbus_thread.write_holding_registers)
 
+        self.ocr = PaddleOCR(
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False)
 
         self.kanjiFontPath = "aikensa/font/NotoSansJP-ExtraBold.ttf"
 
@@ -203,6 +211,21 @@ class InspectionThread(QThread):
         self.J30RH_part4_Crop_YPos = 1130
         self.J30RH_part5_Crop_YPos = 1445
 
+        self.Tray_detection_left_name_crop = None
+        self.Tray_detection_left_pos_crop = None
+        self.Tray_detection_right_name_crop = None
+        self.Tray_detection_right_pos_crop = None
+
+        self.Tray_ocr_image_left_name_image = None
+        self.Tray_ocr_image_left_pos_image = None
+        self.Tray_ocr_image_right_name_image = None
+        self.Tray_ocr_image_right_pos_image = None
+
+        self.Tray_detection_left_name_result = None
+        self.Tray_detection_left_pos_result = None
+        self.Tray_detection_right_name_result = None
+        self.Tray_detection_right_pos_result = None
+
         self.height_hole_offset = int(120//self.scale_factor_hole)
         self.width_hole_offset = int(370//self.scale_factor_hole)
 
@@ -240,6 +263,8 @@ class InspectionThread(QThread):
         self.InspectionResult_TapeID_NG_int = [None]*5
 
         self.InspectionResult_NGReason = [None]*5
+
+        self.InspectionResult_Tray_NG  = None #1 = NG, 0 = OK
         
         self.InspectionStatus = [None]*5
 
@@ -480,6 +505,42 @@ class InspectionThread(QThread):
                         self.InstructionCode_prev = self.InstructionCode
                         self.inspection_config.doInspection = False
 
+
+                        # Tray detection
+                        self.Tray_ocr_image_left_name_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_name_crop", out_w=512, out_h=512)
+                        self.Tray_ocr_image_left_pos_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_pos_crop", out_w=512, out_h=512)
+                        self.Tray_ocr_image_right_name_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_name_crop", out_w=512, out_h=512)
+                        self.Tray_ocr_image_right_pos_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_pos_crop", out_w=512, out_h=512)
+
+                        #debug show cropped images
+                        cv2.imwrite("left_name.jpg", self.Tray_ocr_image_left_name_image)
+                        cv2.imwrite("left_pos.jpg", self.Tray_ocr_image_left_pos_image)
+                        cv2.imwrite("right_name.jpg", self.Tray_ocr_image_right_name_image)
+                        cv2.imwrite("right_pos.jpg", self.Tray_ocr_image_right_pos_image)
+
+                        images = [
+                            self.Tray_ocr_image_left_name_image,
+                            self.Tray_ocr_image_left_pos_image,
+                            self.Tray_ocr_image_right_name_image,
+                            self.Tray_ocr_image_right_pos_image,
+                        ]
+                        labels = ["left_name", "left_pos", "right_name", "right_pos"]
+
+                        concat_res = self.collect_ocr_concat(self.ocr, images, image_ids=labels)
+
+                        # If you need only a flat string (e.g., join with space):
+                        flat_text = " ".join(concat_res["texts"])
+                        print("FLAT TEXT:", flat_text)
+
+                        if flat_text is not None and flat_text == "J30LH A J30LH B":
+                            print ("Tray detected as J30LH correctly.")
+                            self.InspectionResult_Tray_NG = 0
+                        else:
+                            print ("Tray detection failed or incorrect tray.")
+                            self.InspectionResult_Tray_NG = 1
+
+
+
                         # check whether set part is set correctly
                         parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
 
@@ -491,7 +552,21 @@ class InspectionThread(QThread):
                             SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
 
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i] = J30_Set_Check(self.SetCorrectInspectionImages[i], self.AGCJ30RH_SET_LEFT_model, self.AGCJ30RH_SET_RIGHT_model)
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = J30_Check(
+                                                                                                            self.SetCorrectInspectionImages[i],
+                                                                                                            model_left=self.AGCJ30LH_SET_LEFT_model,
+                                                                                                            model_right=self.AGCJ30LH_SET_RIGHT_model,
+                                                                                                            enable_center=False,                 # <- default already
+                                                                                                            crop_from_bottom=True,               # or crop_from_top=True
+                                                                                                            crop_height=80,
+                                                                                                            trim_left=0, trim_right=0,
+                                                                                                            left_width=128, right_width=128,
+                                                                                                            dx_range_left=(10, 50),
+                                                                                                            dx_range_right=(-15, +15)
+                                                                                                        )
+                            
+                            
+                            
                         (
                             self.part1Crop,
                             self.part2Crop,
@@ -527,6 +602,8 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
+                        
                         print("Inspection Result Set ID Emitted")
                         time.sleep(0.5)
 
@@ -543,7 +620,6 @@ class InspectionThread(QThread):
                             print(f"Saved {filename}")
                         #######(SAVE IMAGES FOR TRAINING)##########
                         
-
                 # 2 = Tape Inspection
                 if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
                     if self.InstructionCode_prev == 2:
@@ -571,7 +647,24 @@ class InspectionThread(QThread):
                             self.TapeCorrectInspectionImages[i] = crop
                             TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
                             self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J30_Tape_Check(self.TapeCorrectInspectionImages[i], self.AGCJ30RH_TAPE_LEFT_model, self.AGCJ30RH_TAPE_RIGHT_model, self.AGCJ30RH_TAPE_CENTER_model)
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J30_Check(
+                                                                                                                            self.TapeCorrectInspectionImages[i], model_left=self.AGCJ30LH_TAPE_LEFT_model, model_right=self.AGCJ30LH_TAPE_RIGHT_model, model_center=self.AGCJ30LH_TAPE_CENTER_model,
+                                                                                                                            enable_center=True,
+                                                                                                                            crop_from_top=False,
+                                                                                                                            crop_from_bottom=True,
+                                                                                                                            crop_height=80,
+                                                                                                                            trim_left=0, trim_right=0,
+                                                                                                                            left_width=128, right_width=128,
+                                                                                                                            dx_range_left=(10, 20), dx_range_right=(-15, -2),
+                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
+                                                                                                                            center_tile_width=128,
+                                                                                                                            center_overlap_pct=0,
+                                                                                                                            center_kpt_pair=(0, 1),
+                                                                                                                            center_dist_range=(1.0, 15.0),
+                                                                                                                            center_min_kpt_conf=0.05,
+                                                                                                                            center_draw_ok_green=True
+                                                                                                                        )
+
 
 
                         (
@@ -608,8 +701,6 @@ class InspectionThread(QThread):
                         self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
 
                         print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
-
- 
 
                         #Emit the inspection result and serial number to holding registers
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
@@ -666,6 +757,7 @@ class InspectionThread(QThread):
                     self.InspectionImages[3] = self.part4Crop
                     self.InspectionImages[4] = self.part5Crop
 
+
                 if self.InstructionCode == 0:
                     self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
                     if self.InstructionCode_prev == 0:
@@ -673,37 +765,8 @@ class InspectionThread(QThread):
                         pass  # Skip, already processed
                     else:
                         self.InstructionCode_prev = self.InstructionCode
-
-                        self.InspectionResult_DetectionID = [0, 0, 0, 0, 0]
-
-                        self.InspectionResult_SetID_OK = [0, 0, 0, 0, 0]
-                        self.InspectionResult_SetID_NG = [0, 0, 0, 0, 0]
-
-                        self.InspectionResult_TapeID_OK = [0, 0, 0, 0, 0]
-                        self.InspectionResult_TapeID_NG = [0, 0, 0, 0, 0]
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
-                        self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID_int}")
-                        print(f"Inspection Result Set ID: {self.InspectionResult_SetID_OK_int}")
-                        print(f"Inspection Result Tape ID: {self.InspectionResult_TapeID_OK_int}")
-                        
-                        # Send all zeros to the holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                        print("All zeros Emitted to Holding Registers")
-                        #wait
+                        self._reset_inspection_results()
+                        self._emit_zero_registers()
                         time.sleep(0.5)
 
                 # 1 = Set Inspection
@@ -715,6 +778,39 @@ class InspectionThread(QThread):
                         self.InstructionCode_prev = self.InstructionCode
                         self.inspection_config.doInspection = False
 
+                        # Tray detection
+                        self.Tray_ocr_image_left_name_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_name_crop", out_w=512, out_h=512)
+                        self.Tray_ocr_image_left_pos_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_pos_crop", out_w=512, out_h=512)
+                        self.Tray_ocr_image_right_name_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_name_crop", out_w=512, out_h=512)
+                        self.Tray_ocr_image_right_pos_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_pos_crop", out_w=512, out_h=512)
+
+                        #debug show cropped images
+                        cv2.imwrite("left_name.jpg", self.Tray_ocr_image_left_name_image)
+                        cv2.imwrite("left_pos.jpg", self.Tray_ocr_image_left_pos_image)
+                        cv2.imwrite("right_name.jpg", self.Tray_ocr_image_right_name_image)
+                        cv2.imwrite("right_pos.jpg", self.Tray_ocr_image_right_pos_image)
+
+                        images = [
+                            self.Tray_ocr_image_left_name_image,
+                            self.Tray_ocr_image_left_pos_image,
+                            self.Tray_ocr_image_right_name_image,
+                            self.Tray_ocr_image_right_pos_image,
+                        ]
+                        labels = ["left_name", "left_pos", "right_name", "right_pos"]
+
+                        concat_res = self.collect_ocr_concat(self.ocr, images, image_ids=labels)
+
+                        # If you need only a flat string (e.g., join with space):
+                        flat_text = " ".join(concat_res["texts"])
+                        print("FLAT TEXT:", flat_text)
+
+                        if flat_text is not None and flat_text == "J30LH A J30LH B":
+                            print ("Tray detected as J30LH correctly.")
+                            self.InspectionResult_Tray_NG = 0
+                        else:
+                            print ("Tray detection failed or incorrect tray.")
+                            self.InspectionResult_Tray_NG = 1
+
                         # check whether set part is set correctly
                         parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
 
@@ -723,10 +819,25 @@ class InspectionThread(QThread):
                             self.SetExistInspectionImages[i] = cv2.resize(crop, (512, 512))
                             self.SetCorrectInspectionImages[i] = crop
 
-                            SetPartExist_result = self.AGCJ59JRH_setDetectionModel(self.SetExistInspectionImages[i],stream=True, verbose=False)
+                            SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
 
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i] = J59J_Set_Check(self.SetCorrectInspectionImages[i], self.AGCJ59JRH_SET_LEFT, self.AGCJ59JRH_SET_RIGHT)
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = J30_Check(
+                                                                                                            self.SetCorrectInspectionImages[i],
+                                                                                                            model_left=self.AGCJ30RH_SET_LEFT_model,
+                                                                                                            model_right=self.AGCJ30RH_SET_RIGHT_model,
+                                                                                                            enable_center=False,                 # <- default already
+                                                                                                            crop_from_bottom=False,               
+                                                                                                            crop_from_top=True,
+                                                                                                            crop_height=80,
+                                                                                                            trim_left=0, trim_right=0,
+                                                                                                            left_width=128, right_width=128,
+                                                                                                            dx_range_left=(10, 50),
+                                                                                                            dx_range_right=(-15, +15)
+                                                                                                        )
+                            
+                            
+                            
                         (
                             self.part1Crop,
                             self.part2Crop,
@@ -761,6 +872,7 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
                         print("Inspection Result Set ID Emitted")
                         time.sleep(0.5)
@@ -778,7 +890,6 @@ class InspectionThread(QThread):
                             print(f"Saved {filename}")
                         #######(SAVE IMAGES FOR TRAINING)##########
                         
-
                 # 2 = Tape Inspection
                 if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
                     if self.InstructionCode_prev == 2:
@@ -804,9 +915,26 @@ class InspectionThread(QThread):
 
                             self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
                             self.TapeCorrectInspectionImages[i] = crop
-                            TapePartExist_result = self.AGCJ59JRH_setDetectionModel(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
+                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
                             self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J59J_Tape_Check(self.TapeCorrectInspectionImages[i], self.AGCJ59JRH_TAPE_LEFT, self.AGCJ59JRH_TAPE_RIGHT, self.AGCJ59JRH_TAPE_CENTER)
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J30_Check(
+                                                                                                                            self.TapeCorrectInspectionImages[i], model_left=self.AGCJ30RH_TAPE_LEFT_model, model_right=self.AGCJ30RH_TAPE_RIGHT_model, model_center=self.AGCJ30RH_TAPE_CENTER_model,
+                                                                                                                            enable_center=True,
+                                                                                                                            crop_from_top=True,
+                                                                                                                            crop_from_bottom=False,
+                                                                                                                            crop_height=80,
+                                                                                                                            trim_left=0, trim_right=0,
+                                                                                                                            left_width=128, right_width=128,
+                                                                                                                            dx_range_left=(10, 20), dx_range_right=(-15, -2),
+                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
+                                                                                                                            center_tile_width=128,
+                                                                                                                            center_overlap_pct=0,
+                                                                                                                            center_kpt_pair=(0, 1),
+                                                                                                                            center_dist_range=(1.0, 15.0),
+                                                                                                                            center_min_kpt_conf=0.05,
+                                                                                                                            center_draw_ok_green=True
+                                                                                                                        )
+
 
 
                         (
@@ -844,8 +972,6 @@ class InspectionThread(QThread):
 
                         print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
 
- 
-
                         #Emit the inspection result and serial number to holding registers
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
@@ -869,7 +995,8 @@ class InspectionThread(QThread):
                             cv2.imwrite(filename, img)
                             print(f"Saved {filename}")
                         #######(SAVE IMAGES FOR TRAINING)##########
-                        
+
+
                 #emit the ethernet 
                 self.today_numofPart_signal.emit(self.inspection_config.today_numofPart)
                 self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
@@ -1174,7 +1301,7 @@ class InspectionThread(QThread):
                             self.SetExistInspectionImages[i] = cv2.resize(crop, (512, 512))
                             self.SetCorrectInspectionImages[i] = crop
 
-                            SetPartExist_result = self.AGCJ59JRH_setDetectionModel(self.SetExistInspectionImages[i],stream=True, verbose=False)
+                            SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
 
                             self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i] = J59J_Set_Check(self.SetCorrectInspectionImages[i], self.AGCJ59JRH_SET_LEFT, self.AGCJ59JRH_SET_RIGHT)
@@ -1255,7 +1382,7 @@ class InspectionThread(QThread):
 
                             self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
                             self.TapeCorrectInspectionImages[i] = crop
-                            TapePartExist_result = self.AGCJ59JRH_setDetectionModel(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
+                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
                             self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
                             self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J59J_Tape_Check(self.TapeCorrectInspectionImages[i], self.AGCJ59JRH_TAPE_LEFT, self.AGCJ59JRH_TAPE_RIGHT, self.AGCJ59JRH_TAPE_CENTER)
 
@@ -1822,3 +1949,106 @@ class InspectionThread(QThread):
         write(m["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
 
         write(m["return_state_code"], [0])
+
+
+    def _normalize_text(self, s: str,
+                        *,
+                        whitespace: str = "none",
+                        custom_pattern: Optional[str] = None,
+                        transform: Optional[Callable[[str], str]] = None) -> str:
+        """Normalize a single string according to the requested whitespace handling."""
+        if transform is not None:
+            return transform(s)
+
+        if whitespace == "strip":
+            return s.strip()
+        elif whitespace == "collapse":
+            return re.sub(r"\s+", " ", s).strip()
+        elif whitespace == "remove":
+            return re.sub(r"\s+", "", s)
+        elif whitespace == "custom" and custom_pattern:
+            return re.sub(custom_pattern, "", s)
+        # default: no change
+        return s
+
+    def collect_ocr_concat(self,
+        ocr,
+        images: Iterable[Any],                       # list of np.ndarray or file paths
+        image_ids: Optional[Iterable[str]] = None,   # optional labels (e.g., "left_name", "right_pos")
+        *,
+        # NEW: whitespace controls (pick one)
+        whitespace: str = "none",                    # "none"|"strip"|"collapse"|"remove"|"custom"
+        custom_pattern: Optional[str] = None,        # used when whitespace="custom" (regex)
+        transform: Optional[Callable[[str], str]] = None  # custom function(s) -> str
+    ) -> Dict[str, Any]:
+        """
+        Runs ocr.predict() for each image and concatenates:
+        - texts:  List[str]   (normalized if requested)
+        - scores: List[float]
+        - boxes:  np.ndarray (N, 4/8/...) or None
+        - polys:  List[np.ndarray] (each Nx2)
+        - index_map: List[(image_id, local_index)]
+        Whitespace handling:
+        whitespace="strip"    -> trim ends
+        whitespace="collapse" -> collapse runs to single space
+        whitespace="remove"   -> delete all whitespace
+        whitespace="custom"   -> remove regex matches from custom_pattern
+        transform=callable    -> apply your own function (overrides whitespace/custom)
+        """
+        if image_ids is None:
+            image_ids = [f"img_{i}" for i, _ in enumerate(images)]
+
+        texts_all: List[str] = []
+        scores_all: List[float] = []
+        boxes_chunks: List[np.ndarray] = []
+        polys_all: List[np.ndarray] = []
+        index_map: List[Tuple[str, int]] = []
+
+        for img_id, img in zip(image_ids, images):
+            results = ocr.predict(img)   # PaddleOCR v3 pipeline -> List[Result]
+            if not results:
+                continue
+
+            res = results[0]
+            j = res.json["res"]
+
+            texts  = j.get("rec_texts", []) or []
+            scores = j.get("rec_scores", []) or []
+            boxes  = j.get("rec_boxes", None)
+            polys  = j.get("rec_polys", None) or j.get("dt_polys", []) or []
+
+            # normalize + extend
+            for k, t in enumerate(texts):
+                t_norm = self._normalize_text(
+                    t,
+                    whitespace=whitespace,
+                    custom_pattern=custom_pattern,
+                    transform=transform
+                )
+                texts_all.append(t_norm)
+                s = float(scores[k]) if k < len(scores) else float("nan")
+                scores_all.append(s)
+                index_map.append((img_id, k))
+
+            if boxes is not None and hasattr(boxes, "shape"):
+                boxes_chunks.append(np.atleast_2d(boxes))
+
+            if polys:
+                polys_all.extend(polys)
+
+        boxes_all = None
+        if boxes_chunks:
+            try:
+                boxes_all = np.vstack(boxes_chunks)
+            except Exception:
+                boxes_all = np.concatenate(
+                    [b.reshape(1, -1) if b.ndim == 1 else b for b in boxes_chunks], axis=0
+                )
+
+        return {
+            "texts": texts_all,
+            "scores": scores_all,
+            "boxes": boxes_all,
+            "polys": polys_all,
+            "index_map": index_map,
+        }

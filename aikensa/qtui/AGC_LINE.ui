@@ -1374,7 +1374,7 @@ Tape Inspection</string>
      <string notr="true">background-color: rgb(51, 209, 122);</string>
     </property>
     <property name="text">
-     <string>　  日常点検</string>
+     <string> 日常点検モード</string>
     </property>
    </widget>
    <widget class="QPushButton" name="select_J30LH">

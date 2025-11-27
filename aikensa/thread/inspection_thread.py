@@ -686,11 +686,12 @@ class InspectionThread(QThread):
                                                                                                                             crop_height=80,
                                                                                                                             trim_left=0, trim_right=0,
                                                                                                                             left_width=128, right_width=128,
-                                                                                                                            dx_range_left=(10, 20), dx_range_right=(-15, -2),
-                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
+                                                                                                                            dx_range_left=(5, 20), dx_range_right=(-25, -2),
+                                                                                                                            yolo_conf=0.4, yolo_iou=0.5,
                                                                                                                             center_class_id=0,                          # your target class
-                                                                                                                            center_bbox_height_range=(5.0, 15.0),      # OK range in px
-                                                                                                                            center_pad=(64, 64, 64, 64), 
+                                                                                                                            center_bbox_height_range=(3.0, 15.0),      # OK range in px
+                                                                                                                            center_pad=(0, 0, 0, 0), 
+                                                                                                                            debug_mode = self.debug,
                                                                                                                         )
 
 
@@ -982,7 +983,7 @@ class InspectionThread(QThread):
                                                                                                                             trim_left=0, trim_right=0,
                                                                                                                             left_width=128, right_width=128,
                                                                                                                             dx_range_left=(5, 20), dx_range_right=(-25, -2),
-                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
+                                                                                                                            yolo_conf=0.4, yolo_iou=0.5,
                                                                                                                             center_class_id=0,                          # your target class
                                                                                                                             center_bbox_height_range=(3.0, 15.0),      # OK range in px
                                                                                                                             center_pad=(0, 0, 0, 0), 

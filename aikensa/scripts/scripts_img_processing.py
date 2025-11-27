@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from typing import Sequence, List
+from typing import Sequence, List, Tuple, Union
 
 def crop_parts(
     img: np.ndarray, *,
@@ -19,3 +19,103 @@ def crop_parts(
         y2 = max(0, min(int(y_pos + crop_height), h))
         crops.append(img[y1:y2, x1:x2])
     return crops
+
+def aruco_detect(
+    image_bgr: np.ndarray,
+    *,
+    dict: str = "DICT_4X4_50",          # match your call signature (shadows built-in 'dict', but OK)
+    result: str = "single",              # "single" | "array"
+    return_scores: bool = False,         # only used when result="array": return (id, score) tuples
+    use_refine: bool = False             # optional: try refineDetectedMarkers if available
+) -> Union[int, List[int], List[Tuple[int, float]]]:
+    """
+    Detect ArUco markers and return either the best single ID or a list of IDs sorted by confidence.
+
+    Confidence proxy: marker perimeter length computed from detected corners.
+    Returns:
+      - result == "single" -> int (best id) or -1 if none
+      - result == "array"  -> list[int] (sorted by score desc) OR list[(id, score)] if return_scores=True
+    """
+    if image_bgr is None or image_bgr.size == 0:
+        return -1 if result == "single" else ([] if not return_scores else [])
+
+    # --- get dictionary by name (case-insensitive) ---
+    dict_name = dict.upper().strip()
+    if hasattr(cv2.aruco, "getPredefinedDictionary"):
+        try:
+            dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dict_name))
+        except Exception:
+            # final fallback (AttributeError when dict name invalid)
+            if hasattr(cv2.aruco, dict_name):
+                dictionary = getattr(cv2.aruco, dict_name)
+            else:
+                raise ValueError(f"Unknown/unsupported ArUco dictionary: {dict}")
+    else:
+        if hasattr(cv2.aruco, dict_name):
+            dictionary = getattr(cv2.aruco, dict_name)
+        else:
+            raise ValueError(f"Unknown/unsupported ArUco dictionary: {dict}")
+
+    # detector params
+    params = (cv2.aruco.DetectorParameters_create()
+              if hasattr(cv2.aruco, "DetectorParameters_create")
+              else cv2.aruco.DetectorParameters())
+
+    # --- detect (new API first) ---
+    corners = ids = rejected = None
+    if hasattr(cv2.aruco, "ArucoDetector"):
+        detector = cv2.aruco.ArucoDetector(dictionary, params)
+        corners, ids, rejected = detector.detectMarkers(image_bgr)
+        if use_refine and hasattr(cv2.aruco, "refineDetectedMarkers"):
+            try:
+                # Refine usually needs a board; we pass an empty board to be harmless.
+                board = cv2.aruco.Board_create([], [], [])
+                corners, ids, rejected, _ = cv2.aruco.refineDetectedMarkers(
+                    image_bgr, board, corners, ids, rejected, dictionary, params
+                )
+            except Exception:
+                pass
+    else:
+        corners, ids, rejected = cv2.aruco.detectMarkers(image_bgr, dictionary, parameters=params)
+        if use_refine and hasattr(cv2.aruco, "refineDetectedMarkers"):
+            try:
+                board = cv2.aruco.Board_create([], [], [])
+                corners, ids, rejected, _ = cv2.aruco.refineDetectedMarkers(
+                    image_bgr, board, corners, ids, rejected, dictionary, params
+                )
+            except Exception:
+                pass
+
+    if ids is None or len(ids) == 0:
+        return -1 if result == "single" else ([] if not return_scores else [])
+
+    # --- compute perimeter-based scores ---
+    # corners: list of (1,4,2) floats; ids: Nx1 int
+    ids = ids.flatten().astype(int)
+    scores = []
+    for cs in corners:
+        pts = cs.reshape(-1, 2)
+        perim = float(
+            np.linalg.norm(pts[0] - pts[1]) +
+            np.linalg.norm(pts[1] - pts[2]) +
+            np.linalg.norm(pts[2] - pts[3]) +
+            np.linalg.norm(pts[3] - pts[0])
+        )
+        scores.append(perim)
+    scores = np.asarray(scores, dtype=float)
+
+    # sort by score desc
+    order = np.argsort(-scores)
+    ids_sorted = ids[order]
+    scores_sorted = scores[order]
+
+    if result.lower() == "single":
+        # best single id
+        return int(ids_sorted[0])
+    elif result.lower() == "array":
+        if return_scores:
+            return [(int(ids_sorted[i]), float(scores_sorted[i])) for i in range(len(ids_sorted))]
+        else:
+            return [int(x) for x in ids_sorted.tolist()]
+    else:
+        raise ValueError('result must be "single" or "array"')

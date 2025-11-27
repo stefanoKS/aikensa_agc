@@ -174,3 +174,4 @@ cython_debug/
 .pypirc
 
 /aikensa/training_images/
+/aikensa/models/

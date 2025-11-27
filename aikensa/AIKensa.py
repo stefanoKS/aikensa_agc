@@ -6,7 +6,7 @@ from enum import Enum
 import time
 
 from PyQt5 import QtCore
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QStackedWidget, QLabel, QSlider, QMainWindow, QWidget, QCheckBox, QShortcut, QLineEdit, QRadioButton
+from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QStackedWidget, QLabel, QSlider, QMainWindow, QWidget, QCheckBox, QShortcut, QLineEdit, QRadioButton, QComboBox
 from PyQt5.uic import loadUi
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QCoreApplication
 from PyQt5.QtGui import QImage, QPixmap, QKeySequence
@@ -159,6 +159,7 @@ class AIKensa(QMainWindow):
             if self.Inspect_tape_button:
                 self.Inspect_tape_button.clicked.connect(lambda: self._set_inspection_params(self.inspection_thread, "doTapeInspection", True))
 
+            
 
         for i in self.inspection_widget_indices:
             self.connect_inspectionConfig_button(i, "kansei_plus", "kansei_plus", True)
@@ -172,6 +173,8 @@ class AIKensa(QMainWindow):
             #connect reset button
             self.connect_inspectionConfig_button(i, "counterReset", "counterReset", True)
             self.connect_line_edit_text_changed(widget_index=i, line_edit_name="kensain_name", inspection_param="kensainNumber")
+            self.connect_QComboBox_changed(widget_index=i, combo_name="comboSelection", inspection_param="manual_part_selection")
+            self.connect_QComboBox_changed(widget_index=i, combo_name="comboSelection_ONOFF", inspection_param="debug_mode_selection")
 
         for i in range(self.stackedWidget.count()):
             widget = self.stackedWidget.widget(i)
@@ -187,10 +190,9 @@ class AIKensa(QMainWindow):
                 button_main_menu.clicked.connect(lambda: self._set_inspection_params(self.inspection_thread, 'widget', 0))
 
         # Radio button for nichijoutenken
-        self.connect_radio_to_button_visibility(widget_index=5, radio_name="nichijoutenken_radio", target_button_name="select_J30LH", inspection_param="nichijoutenken_mode")
-        self.connect_radio_to_button_visibility(widget_index=5, radio_name="nichijoutenken_radio", target_button_name="select_J30RH", inspection_param="nichijoutenken_mode")
-        self.connect_radio_to_button_visibility(widget_index=5, radio_name="nichijoutenken_radio", target_button_name="select_J59JLH", inspection_param="nichijoutenken_mode")
-        self.connect_radio_to_button_visibility(widget_index=5, radio_name="nichijoutenken_radio", target_button_name="select_J59JRH", inspection_param="nichijoutenken_mode")
+        self.connect_radio_to_button_visibility(widget_index=5, radio_name="nichijoutenken_radio", target_button_name="comboSelection", inspection_param="nichijoutenken_mode")
+        self.connect_radio_to_button_visibility(widget_index=5, radio_name="debug_mode_radio", target_button_name="comboSelection_ONOFF", inspection_param="debug_mode")
+
 
         self.setCentralWidget(self.stackedWidget)
         self.showFullScreen()
@@ -368,6 +370,24 @@ class AIKensa(QMainWindow):
         if line_edit:
             line_edit.textChanged.connect(lambda text: self._set_inspection_params(self.inspection_thread, inspection_param, text))
 
+    def connect_QComboBox_changed(self, widget_index, combo_name, inspection_param):
+        widget = self.stackedWidget.widget(widget_index)
+        combo_box: QComboBox = widget.findChild(QComboBox, combo_name)
+        if not combo_box:
+            return
+
+        # index -> value map (make it a list or dict, not a set)
+        id_map = [None, 1, 2, 3, 4]  # or {0: None, 1: 1, 2: 2, 3: 3, 4: 4}
+
+        def on_index_changed(index: int):
+            if 0 <= index < len(id_map):
+                value = id_map[index]
+            else:
+                value = None
+            self._set_inspection_params(self.inspection_thread, inspection_param, value)
+
+        combo_box.currentIndexChanged[int].connect(on_index_changed)
+        
     def on_holding_updated(self, values: dict):
         """
         Slot called whenever the holding registers (0..9) change.
@@ -412,7 +432,7 @@ class AIKensa(QMainWindow):
         """
         widget = self.stackedWidget.widget(widget_index)
         radio  = widget.findChild(QRadioButton, radio_name)
-        target = widget.findChild(QPushButton, target_button_name)
+        target = widget.findChild(QComboBox, target_button_name)
 
         if not radio or not target:
             # Silently ignore if either control isn't present on this widget
@@ -431,6 +451,7 @@ class AIKensa(QMainWindow):
                     thread=self.inspection_thread,
                     param=inspection_param: self._set_inspection_params(thread, param, checked)
             )
+
 
 def main():
     app = QApplication(sys.argv)

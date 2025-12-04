@@ -190,6 +190,8 @@ class InspectionThread(QThread):
         self.InstructionCode_prev = None
         self.TurnOffCommand = False
 
+        self.prev_numofPart = None
+
         # "Read mysql id and password from yaml file"
         with open("aikensa/mysql/id.yaml") as file:
             credentials = yaml.load(file, Loader=yaml.FullLoader)
@@ -488,6 +490,8 @@ class InspectionThread(QThread):
                         self.InspectionResult_BouseiID_OK = combine_by_and(self.InspectionResult_DetectionID)
                         self.InspectionResult_BouseiID_NG = [1 - x for x in self.InspectionResult_BouseiID_OK]
 
+                        prev = self.inspection_config.current_numofPart[self.inspection_config.widget][0]   
+
                         for i in range (len(self.InspectionResult_BouseiID_OK)):
                             if self.InspectionResult_BouseiID_OK[i] == 1:
                                 self.InspectionStatus[i] = "OK"
@@ -499,8 +503,20 @@ class InspectionThread(QThread):
                                 self.inspection_config.today_numofPart[self.inspection_config.widget][1] += 1
                             
                         #PLAY SOUND IF THE TOTAL OF OK FOR THE CURRENT NUM OF PART IS IN MULTIPLICATION OF 40
-                        if self.inspection_config.current_numofPart[self.inspection_config.widget][0] % 40 == 0 and self.inspection_config.current_numofPart[self.inspection_config.widget][0] != 0:
-                            play_keisoku_sound()
+                        # if self.inspection_config.current_numofPart[self.inspection_config.widget][0] % 40 == 0 and self.inspection_config.current_numofPart[self.inspection_config.widget][0] != 0:
+                        #     play_keisoku_sound()
+
+                        curr = self.inspection_config.current_numofPart[self.inspection_config.widget][0]
+
+
+                        if curr > prev:
+                            # Block index: 0 = 0?39, 1 = 40?79, 2 = 80?119, ...
+                            prev_block = prev // 40
+                            curr_block = curr // 40
+
+                            # If we entered a new block (40, 80, 120, ...) then play sound
+                            if curr_block > prev_block and curr_block > 0:
+                                play_keisoku_sound()
 
                         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
                         self.InspectionResult_BouseiID_OK_int = list_to_16bit_int(self.InspectionResult_BouseiID_OK)

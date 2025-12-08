@@ -36,7 +36,7 @@ DX_RANGE_LEFT  = (-15.0, +15.0)
 DX_RANGE_RIGHT = (-15.0, +15.0)
 
 # Runtime / draw
-YOLO_CONF   = 0.60
+YOLO_CONF   = 0.20
 YOLO_IOU    = 0.50
 DRAW_RADIUS = 2
 DRAW_THICK  = 2
@@ -185,12 +185,12 @@ def _draw_tile_annotations(img_bgr: np.ndarray,
 # 4) Model I/O helpers
 # =========================
 
-def _run_yolo_pose(model: Any, tile_bgr: np.ndarray, conf: float, iou: float):
+def _run_yolo_pose(model: Any, tile_bgr: np.ndarray, conf: float, iou: float, imgsz: int = 384) -> Any:
     """Run Ultralytics model on a single np.ndarray tile (BGR is fine)."""
     if tile_bgr is None or tile_bgr.size == 0:
         print("⚠️ Warning: Empty tile passed to YOLO inference.")
         return None
-    return model.predict(source=tile_bgr, conf=conf, iou=iou, verbose=False, save=False, imgsz=256)
+    return model.predict(source=tile_bgr, conf=conf, iou=iou, verbose=False, save=False, imgsz=imgsz)
 
 
 def _pad_image(img: np.ndarray, pad: Tuple[int,int,int,int],
@@ -205,12 +205,13 @@ def _run_yolo_pose_with_pad(model: Any,
                             tile_bgr: np.ndarray,
                             conf: float,
                             iou: float,
-                            pad: Tuple[int,int,int,int]) -> Tuple[Any, Tuple[int,int,int,int]]:
+                            pad: Tuple[int,int,int,int],
+                            imgsz: int = 384) -> Tuple[Any, Tuple[int,int,int,int]]:
     """
     Pads tile, runs model, returns (results, (pt,pb,pl,pr)).
     """
     padded, pad_tuple = _pad_image(tile_bgr, pad)
-    results = _run_yolo_pose(model, padded, conf=conf, iou=iou)
+    results = _run_yolo_pose(model, padded, conf=conf, iou=iou, imgsz=imgsz)
     return results, pad_tuple
 
 
@@ -384,7 +385,9 @@ def _evaluate_center_tile_boxes(model_center: Any,
                                 pad: Tuple[int,int,int,int]=(0,0,0,0),
                                 annotated_bgr: Optional[np.ndarray] = None,
                                 draw: bool = True,
-                                debug_mode: bool = DEBUG_MODE) -> Dict[str, Any]:
+                                debug_mode: bool = DEBUG_MODE,
+                                yolo_imgsz: int = 384
+                                ) -> Dict[str, Any]:
     """
     - Pads the tile by 'pad' before inference.
     - Runs object detection via Ultralytics.
@@ -397,7 +400,7 @@ def _evaluate_center_tile_boxes(model_center: Any,
     (ox, oy) = tile_offset_xy
     padded, (pt, pb, pl, pr) = _pad_image(tile_bgr, pad)
 
-    results = _run_yolo_pose(model_center, padded, conf=conf, iou=iou)
+    results = _run_yolo_pose(model_center, padded, conf=conf, iou=iou, imgsz=yolo_imgsz)
     if not results or len(results) == 0 or getattr(results[0], "boxes", None) is None:
         # In debug, still draw OK if requested
         ok_debug = True if debug_mode else False
@@ -481,7 +484,9 @@ def _scan_center_strip(annotated_bgr: np.ndarray,
                        height_range: Tuple[float,float],
                        pad: Tuple[int,int,int,int]=(0,0,0,0),
                        draw_ok_green: bool = True,
-                       debug_mode: bool = DEBUG_MODE) -> List[Dict[str, Any]]:
+                       debug_mode: bool = DEBUG_MODE,
+                       yolo_imgsz: int = 384
+                       ) -> List[Dict[str, Any]]:
     """
     Slides across middle strip; each window:
       - pad -> detect -> renorm -> evaluate bbox height
@@ -510,7 +515,8 @@ def _scan_center_strip(annotated_bgr: np.ndarray,
             pad=pad,
             annotated_bgr=annotated_bgr,
             draw=True,
-            debug_mode=debug_mode
+            debug_mode=debug_mode,
+            yolo_imgsz=yolo_imgsz
         )
         r["roi_xywh"] = roi
         results.append(r)
@@ -546,6 +552,8 @@ def J30_Check(img_bgr: np.ndarray,
               # --- thresholds / NMS ---
               yolo_conf: float = YOLO_CONF,
               yolo_iou: float = YOLO_IOU,
+              yolo_imgsz_side: int = 384,
+              yolo_imgsz_center: int = 384,
               # --- L/R evaluation ---
               dx_range_left: Tuple[float, float] = DX_RANGE_LEFT,
               dx_range_right: Tuple[float, float] = DX_RANGE_RIGHT,
@@ -602,7 +610,7 @@ def J30_Check(img_bgr: np.ndarray,
 
     # --- LEFT (pad -> infer -> unpad coords -> global) ---
     left_img, (lx, ly, lw, lh) = tiles_lr["left"]
-    l_results, lpad = _run_yolo_pose_with_pad(model_left, left_img, conf=yolo_conf, iou=yolo_iou, pad=left_pad)
+    l_results, lpad = _run_yolo_pose_with_pad(model_left, left_img, conf=yolo_conf, iou=yolo_iou, pad=left_pad, imgsz = yolo_imgsz_side)
     lk, lks, lb, ls, lc = _extract_pose_from_results_with_unpad(
         l_results,
         tile_offset_xy=(lx + global_offset[0], ly + global_offset[1]),
@@ -615,7 +623,7 @@ def J30_Check(img_bgr: np.ndarray,
 
     # --- RIGHT (pad -> infer -> unpad coords -> global) ---
     right_img, (rx, ry, rw, rh) = tiles_lr["right"]
-    r_results, rpad = _run_yolo_pose_with_pad(model_right, right_img, conf=yolo_conf, iou=yolo_iou, pad=right_pad)
+    r_results, rpad = _run_yolo_pose_with_pad(model_right, right_img, conf=yolo_conf, iou=yolo_iou, pad=right_pad, imgsz = yolo_imgsz_side)
     rk, rks, rb, rs, rc = _extract_pose_from_results_with_unpad(
         r_results,
         tile_offset_xy=(rx + global_offset[0], ry + global_offset[1]),
@@ -666,7 +674,8 @@ def J30_Check(img_bgr: np.ndarray,
             height_range=center_bbox_height_range,
             pad=center_pad,
             draw_ok_green=center_draw_ok_green,
-            debug_mode=dbg
+            debug_mode=dbg,
+            yolo_imgsz = yolo_imgsz_center
         )
 
     # 7) Overall OK (respect debug)

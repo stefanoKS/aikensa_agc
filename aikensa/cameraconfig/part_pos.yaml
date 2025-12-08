@@ -29,7 +29,7 @@ Tray_detection_right_name_crop: [[2911, 907], [2958, 913], [2959, 803], [2912, 8
 Tray_detection_right_pos_crop: [[2916, 1485], [2922, 1575], [2992, 1576], [2988, 1486]]
 
 Tray_detection_left_crop: [[172, 261], [172, 400], [312, 400], [312, 261]]
-Tray_detection_right_crop: [[2739, 261], [2739, 380], [2884, 380], [2884, 261]]
+Tray_detection_right_crop: [[2739, 261], [2739, 400], [2884, 400], [2884, 261]]
 
-Tray_detection_left_down_crop: [[146, 1643], [146, 1788], [310, 1788], [322, 1643]]
-Tray_detection_right_down_crop: [[2729, 1648], [2729, 1770], [2892, 1770], [2892, 1648]]
+Tray_detection_left_down_crop: [[146, 1648], [146, 1788], [310, 1788], [322, 1648]]
+Tray_detection_right_down_crop: [[2729, 1648], [2729, 1788], [2892, 1788], [2892, 1648]]

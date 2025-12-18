@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
-from typing import Sequence, List, Tuple, Union
+from typing import Sequence, List, Tuple, Union, Optional
 import os
+from ultralytics import YOLO
 
 def crop_parts(
     img: np.ndarray, *,
@@ -22,6 +23,7 @@ def crop_parts(
     return crops
 
 def aruco_detect(
+    
     image_bgr: np.ndarray,
     *,
     dict: str = "DICT_4X4_50",          # match your call signature (shadows built-in 'dict', but OK)
@@ -40,6 +42,8 @@ def aruco_detect(
     if image_bgr is None or image_bgr.size == 0:
         return -1 if result == "single" else ([] if not return_scores else [])
 
+    init = image_bgr.copy()
+
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
 
     # alpha = 1.5  # contrast control (1.0-3.0)
@@ -51,14 +55,13 @@ def aruco_detect(
     gray = cv2.convertScaleAbs(gray, alpha=alpha, beta=0)
 
 
-    filename = f"aruco_debug_gray.png"
-    base, ext = os.path.splitext(filename)
-    n = 1
-    while os.path.exists(filename):
-        filename = f"{base}_{n}{ext}"
-        n += 1
-
-    cv2.imwrite(filename, gray)
+    # filename = f"aruco_debug_gray.png"
+    # base, ext = os.path.splitext(filename)
+    # n = 1
+    # while os.path.exists(filename):
+    #     filename = f"{base}_{n}{ext}"
+    #     n += 1
+    # cv2.imwrite(filename, init)
     
 
     # --- get dictionary by name (case-insensitive) ---
@@ -141,3 +144,47 @@ def aruco_detect(
             return [int(x) for x in ids_sorted.tolist()]
     else:
         raise ValueError('result must be "single" or "array"')
+    
+
+
+def aruco_detect_yolo(
+    image_bgr: np.ndarray,
+    model: YOLO,
+    default: int = -1,
+) -> Tuple[int, Optional[str]]:
+    """
+    Run a YOLO *classification* model on one image and return:
+        (class_index: int, class_name: str | None)
+
+    If no valid prediction is available, returns (default, None).
+    """
+
+    # --- debug save (same as your original) ---
+    filename = "aruco_debug_gray.png"
+    base, ext = os.path.splitext(filename)
+    n = 1
+    while os.path.exists(filename):
+        filename = f"{base}_{n}{ext}"
+        n += 1
+    cv2.imwrite(filename, image_bgr)
+
+    if image_bgr is None or image_bgr.size == 0:
+        return default, None
+
+    # single forward pass
+    res = model(image_bgr, stream=False, verbose=False)[0]
+
+    # classification head: res.probs is a tensor of class scores
+    probs = getattr(res, "probs", None)
+    if probs is None or probs.data is None:
+        return default, None
+
+    # argmax index -> Python int
+    cls_idx = int(probs.data.argmax().item())
+
+    # get class name from model.names (Ultralytics standard)
+    # model.names is usually a dict: {0: "class0", 1: "class1", ...}
+    names = getattr(model, "names", None) or {}
+    cls_name = names.get(cls_idx, None)
+
+    return cls_idx

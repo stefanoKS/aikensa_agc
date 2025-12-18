@@ -26,7 +26,7 @@ from ultralytics import YOLO
 from PIL import ImageFont, ImageDraw, Image
 
 from aikensa.scripts.scripts import list_to_16bit_int, load_register_map, invert_16bit_int, random_list
-from aikensa.scripts.scripts_img_processing import crop_parts, aruco_detect
+from aikensa.scripts.scripts_img_processing import crop_parts, aruco_detect, aruco_detect_yolo
 
 from aikensa.parts_config.AGC.J59J.J59J_SET import J59J_Set_Check as J59J_Set_Check
 from aikensa.parts_config.AGC.J59J.J59J_KENSA import J59J_Tape_Check as J59J_Tape_Check
@@ -520,12 +520,8 @@ class InspectionThread(QThread):
                         self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
                         self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
 
-                        cv2.imwrite("left_tray.jpg", self.Tray_detection_left_image)
-                        cv2.imwrite("right_tray.jpg", self.Tray_detection_right_image)
-
-                        self.Tray_detection_left_result = aruco_detect(self.Tray_detection_left_image, dict = "DICT_4X4_100", result = "single")
-                        self.Tray_detection_right_result = aruco_detect(self.Tray_detection_right_image, dict = "DICT_4X4_100", result = "single")
-
+                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
+                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
                         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
 
                         if self.Tray_detection_left_result == 0 and self.Tray_detection_right_result == 1:
@@ -638,12 +634,8 @@ class InspectionThread(QThread):
                         self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
                         self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
 
-                        cv2.imwrite("left_tray.jpg", self.Tray_detection_left_image)
-                        cv2.imwrite("right_tray.jpg", self.Tray_detection_right_image)
-
-                        self.Tray_detection_left_result = aruco_detect(self.Tray_detection_left_image, dict = "DICT_4X4_100", result = "single")
-                        self.Tray_detection_right_result = aruco_detect(self.Tray_detection_right_image, dict = "DICT_4X4_100", result = "single")
-
+                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
+                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
                         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
 
                         if self.Tray_detection_left_result == 0 and self.Tray_detection_right_result == 1:
@@ -822,12 +814,8 @@ class InspectionThread(QThread):
                         self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_down_crop", out_w=512, out_h=512)
                         self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_down_crop", out_w=512, out_h=512)
 
-                        cv2.imwrite("left_tray.jpg", self.Tray_detection_left_image)
-                        cv2.imwrite("right_tray.jpg", self.Tray_detection_right_image)
-
-                        self.Tray_detection_left_result = aruco_detect(self.Tray_detection_left_image, dict = "DICT_4X4_100", result = "single")
-                        self.Tray_detection_right_result = aruco_detect(self.Tray_detection_right_image, dict = "DICT_4X4_100", result = "single")
-
+                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
+                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
                         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
 
                         if self.Tray_detection_left_result == 2 and self.Tray_detection_right_result == 3:
@@ -939,12 +927,8 @@ class InspectionThread(QThread):
                         self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_down_crop", out_w=512, out_h=512)
                         self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_down_crop", out_w=512, out_h=512)
                       
-                        cv2.imwrite("left_tray.jpg", self.Tray_detection_left_image)
-                        cv2.imwrite("right_tray.jpg", self.Tray_detection_right_image)
-
-                        self.Tray_detection_left_result = aruco_detect(self.Tray_detection_left_image, dict = "DICT_4X4_100", result = "single")
-                        self.Tray_detection_right_result = aruco_detect(self.Tray_detection_right_image, dict = "DICT_4X4_100", result = "single")
-
+                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
+                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
                         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
 
                         if self.Tray_detection_left_result == 2 and self.Tray_detection_right_result == 3:
@@ -1123,22 +1107,18 @@ class InspectionThread(QThread):
                         # Tray detection
                         self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
                         self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
-                        
-                        cv2.imwrite("left_tray.jpg", self.Tray_detection_left_image)
-                        cv2.imwrite("right_tray.jpg", self.Tray_detection_right_image)
 
-                        self.Tray_detection_left_result = aruco_detect(self.Tray_detection_left_image, dict = "DICT_4X4_100", result = "single")
-                        self.Tray_detection_right_result = aruco_detect(self.Tray_detection_right_image, dict = "DICT_4X4_100", result = "single")
-
+                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
+                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
                         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
 
-                        self.InspectionResult_Tray_NG = 0
-                        # if self.Tray_detection_left_result == 4 and self.Tray_detection_right_result == 5:
-                        #     print ("Tray detected as J59JLH correctly.")
-                        #     self.InspectionResult_Tray_NG = 0
-                        # else:
-                        #     print ("Tray detection failed or incorrect tray.")
-                        #     self.InspectionResult_Tray_NG = 1
+                        # self.InspectionResult_Tray_NG = 0
+                        if self.Tray_detection_left_result == 4 and self.Tray_detection_right_result == 5:
+                            print ("Tray detected as J59JLH correctly.")
+                            self.InspectionResult_Tray_NG = 0
+                        else:
+                            print ("Tray detection failed or incorrect tray.")
+                            self.InspectionResult_Tray_NG = 1
 
                         # check whether set part is set correctly
                         parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
@@ -1160,7 +1140,7 @@ class InspectionThread(QThread):
                                                                                                             crop_height=128,
                                                                                                             trim_left=0, trim_right=64,
                                                                                                             left_width=256, right_width=256,
-                                                                                                            dx_range_left=(-40, -25),
+                                                                                                            dx_range_left=(-40, -20),
                                                                                                             dx_range_right=(-10, 10),
                                                                                                             left_pad=(0, 0, 0, 0),
                                                                                                             right_pad=(0, 0, 0, 0),
@@ -1243,22 +1223,18 @@ class InspectionThread(QThread):
                         self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
                         self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
 
-                        cv2.imwrite("left_tray.jpg", self.Tray_detection_left_image)
-                        cv2.imwrite("right_tray.jpg", self.Tray_detection_right_image)
-
-                        self.Tray_detection_left_result = aruco_detect(self.Tray_detection_left_image, dict = "DICT_4X4_100", result = "single")
-                        self.Tray_detection_right_result = aruco_detect(self.Tray_detection_right_image, dict = "DICT_4X4_100", result = "single")
-
+                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
+                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
                         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
 
 
-                        self.InspectionResult_Tray_NG = 0
-                        # if self.Tray_detection_left_result == 4 and self.Tray_detection_right_result == 5:
-                        #     print ("Tray detected as J59JLH correctly.")
-                        #     self.InspectionResult_Tray_NG = 0
-                        # else:
-                        #     print ("Tray detection failed or incorrect tray.")
-                        #     self.InspectionResult_Tray_NG = 1
+                        # self.InspectionResult_Tray_NG = 0
+                        if self.Tray_detection_left_result == 4 and self.Tray_detection_right_result == 5:
+                            print ("Tray detected as J59JLH correctly.")
+                            self.InspectionResult_Tray_NG = 0
+                        else:
+                            print ("Tray detection failed or incorrect tray.")
+                            self.InspectionResult_Tray_NG = 1
 
                         if self.lotASCIICode_1 == 22089 and self.lotASCIICode_2 == 52:
                             print("IV4 detected, skipping Tape Inspection...")
@@ -1301,7 +1277,7 @@ class InspectionThread(QThread):
                                                                                                                             crop_height=128,
                                                                                                                             trim_left=0, trim_right=64,
                                                                                                                             left_width=256, right_width=256,
-                                                                                                                            dx_range_left=(-20, 5), dx_range_right=(-25, -2),
+                                                                                                                            dx_range_left=(18, 40), dx_range_right=(2, 25),
                                                                                                                             yolo_conf=0.1, yolo_iou=0.5,
                                                                                                                             center_class_id=0,                          # your target class
                                                                                                                             center_bbox_height_range=(1.0, 15.0),      # OK range in px
@@ -1430,22 +1406,18 @@ class InspectionThread(QThread):
                         self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_down_crop", out_w=512, out_h=512)
                         self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_down_crop", out_w=512, out_h=512)
 
-                        cv2.imwrite("left_tray.jpg", self.Tray_detection_left_image)
-                        cv2.imwrite("right_tray.jpg", self.Tray_detection_right_image)
-
-                        self.Tray_detection_left_result = aruco_detect(self.Tray_detection_left_image, dict = "DICT_4X4_100", result = "single")
-                        self.Tray_detection_right_result = aruco_detect(self.Tray_detection_right_image, dict = "DICT_4X4_100", result = "single")
-
+                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
+                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
                         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
 
 
-                        self.InspectionResult_Tray_NG = 0
-                        # if self.Tray_detection_left_result == 6 and self.Tray_detection_right_result == 7:
-                        #     print ("Tray detected as J59JRH correctly.")
-                        #     self.InspectionResult_Tray_NG = 0
-                        # else:
-                        #     print ("Tray detection failed or incorrect tray.")
-                        #     self.InspectionResult_Tray_NG = 1
+                        # self.InspectionResult_Tray_NG = 0
+                        if self.Tray_detection_left_result == 6 and self.Tray_detection_right_result == 7:
+                            print ("Tray detected as J59JRH correctly.")
+                            self.InspectionResult_Tray_NG = 0
+                        else:
+                            print ("Tray detection failed or incorrect tray.")
+                            self.InspectionResult_Tray_NG = 1
 
                         # check whether set part is set correctly
                         parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
@@ -1550,21 +1522,17 @@ class InspectionThread(QThread):
                         self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_down_crop", out_w=512, out_h=512)
                         self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_down_crop", out_w=512, out_h=512)
 
-                        cv2.imwrite("left_tray.jpg", self.Tray_detection_left_image)
-                        cv2.imwrite("right_tray.jpg", self.Tray_detection_right_image)
-
-                        self.Tray_detection_left_result = aruco_detect(self.Tray_detection_left_image, dict = "DICT_4X4_100", result = "single")
-                        self.Tray_detection_right_result = aruco_detect(self.Tray_detection_right_image, dict = "DICT_4X4_100", result = "single")
-
+                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
+                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
                         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
 
-                        self.InspectionResult_Tray_NG = 0
-                        # if self.Tray_detection_left_result == 6 and self.Tray_detection_right_result == 7:
-                        #     print ("Tray detected as J59JLH correctly.")
-                        #     self.InspectionResult_Tray_NG = 0
-                        # else:
-                        #     print ("Tray detection failed or incorrect tray.")
-                        #     self.InspectionResult_Tray_NG = 1
+                        # self.InspectionResult_Tray_NG = 0
+                        if self.Tray_detection_left_result == 6 and self.Tray_detection_right_result == 7:
+                            print ("Tray detected as J59JLH correctly.")
+                            self.InspectionResult_Tray_NG = 0
+                        else:
+                            print ("Tray detection failed or incorrect tray.")
+                            self.InspectionResult_Tray_NG = 1
 
                         if self.lotASCIICode_1 == 22089 and self.lotASCIICode_2 == 52:
                             print("IV4 detected, skipping Tape Inspection...")
@@ -1991,6 +1959,8 @@ class InspectionThread(QThread):
         self.AGCJ30RH_TAPE_LEFT_model = YOLO("./aikensa/models/AGCJ30RH/TAPE/AGCJ30RH_TAPE_LEFT.pt")
         self.AGCJ30RH_TAPE_RIGHT_model = YOLO("./aikensa/models/AGCJ30RH/TAPE/AGCJ30RH_TAPE_RIGHT.pt")
         self.AGCJ30RH_TAPE_CENTER_model = YOLO("./aikensa/models/AGCJ30RH/TAPE/AGCJ30RH_TAPE_CENTER_DETECTION.pt")
+
+        self.arucoClassificer_model = YOLO("./aikensa/models/ARUCO/aruco.pt")
 
 
     def stop(self):

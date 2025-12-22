@@ -294,6 +294,7 @@ class InspectionThread(QThread):
         self.prev_LotNumber = None
 
         self.currentLot_NOP = [0]*2 #current lot number num of parts [OK, NG]
+        self.prevLot_NOP = [0]*2
 
         self.temp_prev_OK = 0
         self.temp_prev_NG = 0
@@ -341,8 +342,20 @@ class InspectionThread(QThread):
         self.InstructionCode    = reg_dict.get(100, 0)
 
         #combine lot number front and back by appending them into singular number
-        self.current_LotNumber = f"{self.lotNumber_front:05d}{self.lotNumber_back:05d}"
-        self.current_SerialNumber = f"{self.serialNumber_front:05d}{self.serialNumber_back:05d}"
+        #Convert all the lotASCII Code to characters
+        self.lotASCIICode_chars = self.convert_lotASCII_to_chars(
+            [
+            self.lotASCIICode_1,
+            self.lotASCIICode_2,
+            self.lotASCIICode_3,
+            self.lotASCIICode_4,
+            self.lotASCIICode_5,
+            self.lotASCIICode_6,
+            self.lotASCIICode_7,
+            self.lotASCIICode_8]
+        )
+        self.current_LotNumber = f"{self.lotASCIICode_chars}{self.lotNumber_back:05d}{self.lotNumber_front:05d}"
+        self.current_SerialNumber = f"{self.serialNumber_back:05d}{self.serialNumber_front:05d}"
 
 
 
@@ -1071,6 +1084,7 @@ class InspectionThread(QThread):
             
                 self.AGC_InspectionStatus.emit(self.InspectionStatus)
             #J59J LH Inspection
+            
             if self.inspection_config.widget == 6:
                 self.handle_adjustments_and_counterreset()
                 self.part1Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part1_Crop", out_w=1771, out_h=121)
@@ -1228,7 +1242,6 @@ class InspectionThread(QThread):
                         pass
                         print("Already processed Tape Inspection command, skipping..."  )
                     else:
-
                     # if self.InstructionCode == 2:
                         self.InstructionCode_prev = self.InstructionCode
                         self.inspection_config.doTapeInspection = False
@@ -1263,8 +1276,9 @@ class InspectionThread(QThread):
 
                         if self.prev_LotNumber == self.current_LotNumber or self.prev_SerialNumber == self.current_SerialNumber:
                             #Counter need to be reset to the prev value
-                            self.currentLot_NOP[0] = self.currentLot_NOP[0] - self.temp_prev_OK
-                            self.currentLot_NOP[1] = self.currentLot_NOP[1] - self.temp_prev_NG
+                            print("Serial Number or Lot Number unchanged, adjusting counter to previous value.")
+                            self.currentLot_NOP[0] = self.prevLot_NOP[0]
+                            self.currentLot_NOP[1] = self.prevLot_NOP[1]
 
 
                         # check whether set part is set correctly
@@ -1326,10 +1340,143 @@ class InspectionThread(QThread):
                         self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
                         self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
 
+                        for i, d in enumerate(self.InspectionResult_DetectionID):
+                            if d == 1:
+                                self.InspectionResult_TapeID_OK[i] = 0
+                                self.InspectionResult_TapeID_NG[i] = 0
+
+                        self.prevLot_NOP = self.currentLot_NOP.copy()
                         self.currentLot_NOP[0] = self.currentLot_NOP[0] + sum(self.InspectionResult_TapeID_OK)
                         self.currentLot_NOP[1] = self.currentLot_NOP[1] + sum(self.InspectionResult_TapeID_NG)
+             
+                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
+                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
+                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
 
-                        logging.info(f"Current Lot NOP Updated: OK={self.currentLot_NOP[0]}, NG={self.currentLot_NOP[1]}")
+                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
+                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
+
+                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
+
+                        #Emit the inspection result and serial number to holding registers
+                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
+                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
+                        print("Inspection Result Tape ID Emitted")
+
+                        self.SerialNumber_signal.emit(self.current_SerialNumber)
+                        self.LotNumber_signal.emit(self.current_LotNumber)
+
+                        self.prev_LotNumber = self.current_LotNumber
+                        self.prev_SerialNumber = self.current_SerialNumber
+                        self.temp_prev_NG = sum(self.InspectionResult_TapeID_NG)
+                        self.temp_prev_OK = sum(self.InspectionResult_TapeID_OK)
+
+
+                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
+                        time.sleep(0.5)
+
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        # Save corrected tape images for training (compact & safe)
+                        save_dir = "./aikensa/training_images/tape"
+                        os.makedirs(save_dir, exist_ok=True)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        for i, img in enumerate(self.TapeCorrectInspectionImages):
+                            if img is None:
+                                continue
+                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
+                            cv2.imwrite(filename, img)
+                            print(f"Saved {filename}")
+                        #######(SAVE IMAGES FOR TRAINING)##########
+                        
+                if self.InstructionCode == 3:
+
+                    if self.InstructionCode_prev == 3:
+                        pass
+                        print("Already processed Tape Inspection command, skipping..."  )
+                    else:
+                        self.InstructionCode_prev = self.InstructionCode
+                        self.inspection_config.doTapeInspection = False
+
+                        # Tray detection
+                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
+                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
+
+                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
+                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
+                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
+
+                        # self.InspectionResult_Tray_NG = 0
+                        if self.Tray_detection_left_result == 4 and self.Tray_detection_right_result == 5:
+                            print ("Tray detected as J59JLH correctly.")
+                            self.InspectionResult_Tray_NG = 0
+                        else:
+                            print ("Tray detection failed or incorrect tray.")
+                            self.InspectionResult_Tray_NG = 1
+
+                        # check whether set part is set correctly
+                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
+                        
+                        N_PARTS = 5
+                        # ensure these are indexable
+                        self.TapeExistInspectionImages        = [None] * N_PARTS
+                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
+                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
+                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
+                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
+
+                        for i, crop in enumerate(parts):
+
+                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
+                            self.TapeCorrectInspectionImages[i] = crop
+                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
+                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
+                                                                                                                            self.TapeCorrectInspectionImages[i], 
+                                                                                                                            model_left=self.AGCJ59JLH_TAPE_LEFT_model, 
+                                                                                                                            model_right=self.AGCJ59JLH_TAPE_RIGHT_model, 
+                                                                                                                            model_center=self.AGCJ59JLH_TAPE_CENTER_model,
+                                                                                                                            enable_center=True,
+                                                                                                                            crop_from_top=False,
+                                                                                                                            crop_from_bottom=True,
+                                                                                                                            crop_height=128,
+                                                                                                                            trim_left=0, trim_right=64,
+                                                                                                                            left_width=256, right_width=256,
+                                                                                                                            dx_range_left=(15, 43), dx_range_right=(2, 25),
+                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
+                                                                                                                            center_class_id=0,                          # your target class
+                                                                                                                            center_bbox_height_range=(1.0, 15.0),      # OK range in px
+                                                                                                                            center_pad=(0, 0, 0, 0), 
+                                                                                                                            debug_mode = self.debug,
+                                                                                                                            yolo_imgsz_side = 384,
+                                                                                                                            yolo_imgsz_center = 256,
+                                                                                                                        )
+
+
+
+                        (
+                            self.part1Crop,
+                            self.part2Crop,
+                            self.part3Crop,
+                            self.part4Crop,
+                            self.part5Crop,
+                        ) = self.TapeCorrectInspectionImages_result[:5]
+
+                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+                        time.sleep(0.5)
+
+                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
+                        print (self.InspectionResult_DetectionID)
+                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
+
+                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
+                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
+                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
 
                         for i, d in enumerate(self.InspectionResult_DetectionID):
                             if d == 1:
@@ -1380,12 +1527,11 @@ class InspectionThread(QThread):
                             cv2.imwrite(filename, img)
                             print(f"Saved {filename}")
                         #######(SAVE IMAGES FOR TRAINING)##########
-                        
+            
 
 
                 #emit the ethernet 
-                self.today_numofPart_signal.emit(self.inspection_config.today_numofPart)
-                self.current_numofPart_signal.emit(self.inspection_config.current_numofPart)
+                self.current_numofPart_signal.emit(self.currentLot_NOP)
             
                 self.AGC_InspectionStatus.emit(self.InspectionStatus)
             #J59J RH Inspection
@@ -2294,3 +2440,31 @@ class InspectionThread(QThread):
             "polys": polys_all,
             "index_map": index_map,
         }
+    
+    def convert_lotASCII_to_chars(self, ascii_words, stop_at_null=True) -> str:
+        """
+        Convert list of 16-bit words (each contains 2 ASCII bytes) into a string.
+
+        Example word: 21321 = 0x5349 -> bytes [0x49, 0x53] (little-endian) -> 'IS'
+        """
+        out_bytes = bytearray()
+
+        for w in ascii_words:
+            if w is None:
+                continue
+
+            w = int(w) & 0xFFFF  # ensure 16-bit
+
+            # Most PLCs store as little-endian within the 16-bit word:
+            # low byte first, then high byte.
+            b0 = w & 0xFF
+            b1 = (w >> 8) & 0xFF
+
+            for b in (b0, b1):
+                if b == 0:
+                    if stop_at_null:
+                        return out_bytes.decode("ascii", errors="ignore")
+                    continue
+                out_bytes.append(b)
+
+        return out_bytes.decode("ascii", errors="ignore")

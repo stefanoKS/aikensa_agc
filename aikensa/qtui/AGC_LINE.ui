@@ -1300,21 +1300,21 @@ background-color: rgb(238, 238, 236);</string>
      <rect>
       <x>1300</x>
       <y>850</y>
-      <width>311</width>
+      <width>391</width>
       <height>41</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
+      <pointsize>11</pointsize>
       <weight>75</weight>
       <bold>true</bold>
       <underline>false</underline>
      </font>
     </property>
     <property name="styleSheet">
-     <string notr="true">color: rgb(100, 15, 215);</string>
+     <string notr="true">color: rgb(238, 200, 20);</string>
     </property>
     <property name="text">
      <string>XXX</string>
@@ -1505,21 +1505,21 @@ Tape Inspection</string>
      <rect>
       <x>1310</x>
       <y>910</y>
-      <width>291</width>
+      <width>381</width>
       <height>51</height>
      </rect>
     </property>
     <property name="font">
      <font>
       <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
+      <pointsize>11</pointsize>
       <weight>75</weight>
       <bold>true</bold>
       <underline>false</underline>
      </font>
     </property>
     <property name="styleSheet">
-     <string notr="true">color: rgb(238, 15, 15);</string>
+     <string notr="true">color: rgb(238, 200, 20);</string>
     </property>
     <property name="text">
      <string>XXX</string>
@@ -1611,7 +1611,7 @@ Tape Inspection</string>
      <x>0</x>
      <y>0</y>
      <width>1920</width>
-     <height>20</height>
+     <height>21</height>
     </rect>
    </property>
   </widget>

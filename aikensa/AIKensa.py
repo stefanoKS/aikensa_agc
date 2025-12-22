@@ -44,6 +44,8 @@ class AIKensa(QMainWindow):
         self.inspection_thread = InspectionThread(InspectionConfig(),  modbus_thread=self.modbusThread)  
 
         self.modbusThread.holdingUpdated.connect(self.inspection_thread.on_holding_update)
+        self.inspection_thread.SerialNumber_signal.connect(self._update_serial_number)
+        self.inspection_thread.LotNumber_signal.connect(self._update_lot_number)
         self.modbusThread.start()
         self.inspection_thread.start()
 
@@ -51,8 +53,6 @@ class AIKensa(QMainWindow):
         self.calibration_thread = CalibrationThread(CalibrationConfig())
 
         #Passthrough the modbus thread to the inspection thread so it can write to the holding registers
- 
-
         self.timeMonitorThread = TimeMonitorThread(check_interval=1)
         self.timeMonitorThread.time_signal.connect(self.timeUpdate)
         self.timeMonitorThread.start()
@@ -451,6 +451,20 @@ class AIKensa(QMainWindow):
                     thread=self.inspection_thread,
                     param=inspection_param: self._set_inspection_params(thread, param, checked)
             )
+
+    def _update_serial_number(self, serial_number):
+        widget = self.stackedWidget.widget(5)
+        serial_label = widget.findChild(QLabel, "status_SERIALNO")
+        if serial_label:
+            serial_label.setText(f"{serial_number}")
+
+    def _update_lot_number(self, lot_number):
+        widget = self.stackedWidget.widget(5)
+        lot_label = widget.findChild(QLabel, "status_LOTNO")
+        if lot_label:
+            lot_label.setText(f"{lot_number}")
+
+
 
 
 def main():

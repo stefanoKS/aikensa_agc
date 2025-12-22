@@ -65,7 +65,7 @@ class TileDetResult:
     classes: Optional[np.ndarray]               # (N,) or None
 
 @dataclass
-class J30Result:
+class JXXResult:
     annotated_bgr: np.ndarray
     left: TileDetResult
     right: TileDetResult
@@ -321,7 +321,7 @@ def _best_detection_xy_for_class(det: TileDetResult,
     return (x, y)
 
 
-def evaluate_sides_and_annotate(result: J30Result,
+def evaluate_sides_and_annotate(result: JXXResult,
                                 dx_range_left: Tuple[float, float],
                                 dx_range_right: Tuple[float, float],
                                 min_conf: float = 0.0,
@@ -535,7 +535,7 @@ def _scan_center_strip(annotated_bgr: np.ndarray,
 # 7) Unified entry point
 # =========================
 
-def J30_Check(img_bgr: np.ndarray,
+def JXX_Check(img_bgr: np.ndarray,
               model_left: Any,
               model_right: Any,
               model_center: Any = None,                 # optional; needed if enable_center=True
@@ -644,7 +644,7 @@ def J30_Check(img_bgr: np.ndarray,
         for (x, y, w, h), col in [(left_det.roi_xywh, (0, 255, 0)), (right_det.roi_xywh, (255, 0, 0))]:
             cv2.rectangle(annotated, (x, y), (x + w, y + h), col, 1, lineType=cv2.LINE_AA)
 
-    result = J30Result(annotated_bgr=annotated, left=left_det, right=right_det)
+    result = JXXResult(annotated_bgr=annotated, left=left_det, right=right_det)
 
     # 5) L/R evaluate (respect debug)
     eval_lr = evaluate_sides_and_annotate(

@@ -31,7 +31,7 @@ from aikensa.scripts.scripts_img_processing import crop_parts, aruco_detect, aru
 from aikensa.parts_config.AGC.J59J.J59J_SET import J59J_Set_Check as J59J_Set_Check
 from aikensa.parts_config.AGC.J59J.J59J_KENSA import J59J_Tape_Check as J59J_Tape_Check
 
-from aikensa.parts_config.AGC.J30.J30_SET import J30_Check as J30_Check
+from aikensa.parts_config.AGC.JXX_SETKENSA import JXX_Check as JXX_Check
 
 from typing import Iterable, Any, Optional, Dict, Tuple, List, Callable
 import re
@@ -90,6 +90,9 @@ class InspectionThread(QThread):
     partNumber_signal = pyqtSignal(int)
 
     requestModbusWrite = pyqtSignal(int, list)
+
+    SerialNumber_signal = pyqtSignal(str)
+    LotNumber_signal = pyqtSignal(str)
 
     def __init__(self, inspection_config: InspectionConfig = None, modbus_thread=None):
         super(InspectionThread, self).__init__()
@@ -284,6 +287,17 @@ class InspectionThread(QThread):
         self.InstructionCode = None
         self.InstructionCode_prev = None
 
+        self.current_SerialNumber = None #combination of serial number front and back
+        self.current_LotNumber = None 
+
+        self.prev_SerialNumber = None
+        self.prev_LotNumber = None
+
+        self.currentLot_NOP = [0]*2 #current lot number num of parts [OK, NG]
+
+        self.temp_prev_OK = 0
+        self.temp_prev_NG = 0
+
         # "Read mysql id and password from yaml file"
         with open("aikensa/mysql/id.yaml") as file:
             credentials = yaml.load(file, Loader=yaml.FullLoader)
@@ -323,7 +337,14 @@ class InspectionThread(QThread):
 
         self.serialNumber_front = reg_dict.get(62, 0)
         self.serialNumber_back  = reg_dict.get(63, 0)
+
         self.InstructionCode    = reg_dict.get(100, 0)
+
+        #combine lot number front and back by appending them into singular number
+        self.current_LotNumber = f"{self.lotNumber_front:05d}{self.lotNumber_back:05d}"
+        self.current_SerialNumber = f"{self.serialNumber_front:05d}{self.serialNumber_back:05d}"
+
+
 
         #DEBUG
         print(f"lotASCIIcode: {self.lotASCIICode_1}, {self.lotASCIICode_2}, {self.lotASCIICode_3}, {self.lotASCIICode_4}, {self.lotASCIICode_5}, {self.lotASCIICode_6}, {self.lotASCIICode_7}, {self.lotASCIICode_8}")
@@ -372,19 +393,16 @@ class InspectionThread(QThread):
         CREATE TABLE IF NOT EXISTS inspection_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             partName TEXT,
-            numofPart TEXT,
-            currentnumofPart TEXT,
-            timestampHour TEXT,
+            lotNumber TEXT,
+            serialNumber TEXT,
+            currentLotNOP TEXT,
             timestampDate TEXT,
-            deltaTime REAL,
-            kensainName TEXT,
-            status TEXT,
-            NGreason TEXT,
-            PPMS TEXT
+            kensainName TEXT
         )
         ''')
 
         self.conn.commit()
+
         # #Initialize connection to mysql server if available
         # try:
         #     self.mysql_conn = mysql.connector.connect(
@@ -431,8 +449,6 @@ class InspectionThread(QThread):
 
 
         while self.running:
-            # print(self.inspection_config.debug_mode)
-            # print(f"se:{self.inspection_config.debug_mode_selection}")
 
             if self.inspection_config.debug_mode_selection == 1:
                 self.debug = True
@@ -447,9 +463,6 @@ class InspectionThread(QThread):
             if self.partNumber is not None:
                 self.handle_part_number_update()
 
-            #Overwrite part number if the radio button and select button is pressed
-            # print(f"Nichijoutenken mode: {self.inspection_config.nichijoutenken_mode}")
-            # print(f"Manual Part Selection: {self.inspection_config.manual_part_selection}")
             if self.inspection_config.nichijoutenken_mode == True:
                 if self.inspection_config.manual_part_selection == 1:
                     self.partNumber = 4
@@ -462,7 +475,6 @@ class InspectionThread(QThread):
 
 
             if self.inspection_config.widget in [0, 5, 6, 7, 8]:
-
                 ok, self.camFrame_ic4 = self.cap_cam_ic4.read(timeout_ms=1000)
                 if self.camFrame_ic4 is None:
                     continue
@@ -542,7 +554,7 @@ class InspectionThread(QThread):
                             SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
 
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = J30_Check(
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = JXX_Check(
                                                                                                             self.SetCorrectInspectionImages[i],
                                                                                                             model_left=self.AGCJ30LH_SET_LEFT_model,
                                                                                                             model_right=self.AGCJ30LH_SET_RIGHT_model,
@@ -675,7 +687,7 @@ class InspectionThread(QThread):
                             self.TapeCorrectInspectionImages[i] = crop
                             TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
                             self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J30_Check(
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
                                                                                                                             self.TapeCorrectInspectionImages[i], model_left=self.AGCJ30LH_TAPE_LEFT_model, model_right=self.AGCJ30LH_TAPE_RIGHT_model, model_center=self.AGCJ30LH_TAPE_CENTER_model,
                                                                                                                             enable_center=True,
                                                                                                                             crop_from_top=False,
@@ -839,7 +851,7 @@ class InspectionThread(QThread):
                             SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
 
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = J30_Check(
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = JXX_Check(
                                                                                                             self.SetCorrectInspectionImages[i],
                                                                                                             model_left=self.AGCJ30RH_SET_LEFT_model,
                                                                                                             model_right=self.AGCJ30RH_SET_RIGHT_model,
@@ -967,7 +979,7 @@ class InspectionThread(QThread):
                             self.TapeCorrectInspectionImages[i] = crop
                             TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
                             self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J30_Check(
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
                                                                                                                             self.TapeCorrectInspectionImages[i], 
                                                                                                                             model_left=self.AGCJ30RH_TAPE_LEFT_model, 
                                                                                                                             model_right=self.AGCJ30RH_TAPE_RIGHT_model, 
@@ -1131,7 +1143,7 @@ class InspectionThread(QThread):
                             SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
 
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = J30_Check(
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = JXX_Check(
                                                                                                             self.SetCorrectInspectionImages[i],
                                                                                                             model_left=self.AGCJ59JLH_SET_LEFT_model,
                                                                                                             model_right=self.AGCJ59JLH_SET_RIGHT_model,
@@ -1192,6 +1204,8 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
                         
                         print("Inspection Result Set ID Emitted")
+                        self.SerialNumber_signal.emit(self.current_SerialNumber)
+                        self.LotNumber_signal.emit(self.current_LotNumber)
                         time.sleep(0.5)
 
                         #######(SAVE IMAGES FOR TRAINING)##########
@@ -1227,7 +1241,6 @@ class InspectionThread(QThread):
                         self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
                         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
 
-
                         # self.InspectionResult_Tray_NG = 0
                         if self.Tray_detection_left_result == 4 and self.Tray_detection_right_result == 5:
                             print ("Tray detected as J59JLH correctly.")
@@ -1248,6 +1261,11 @@ class InspectionThread(QThread):
                             time.sleep(0.5)
                             continue
 
+                        if self.prev_LotNumber == self.current_LotNumber or self.prev_SerialNumber == self.current_SerialNumber:
+                            #Counter need to be reset to the prev value
+                            self.currentLot_NOP[0] = self.currentLot_NOP[0] - self.temp_prev_OK
+                            self.currentLot_NOP[1] = self.currentLot_NOP[1] - self.temp_prev_NG
+
 
                         # check whether set part is set correctly
                         parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
@@ -1266,7 +1284,7 @@ class InspectionThread(QThread):
                             self.TapeCorrectInspectionImages[i] = crop
                             TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
                             self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J30_Check(
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
                                                                                                                             self.TapeCorrectInspectionImages[i], 
                                                                                                                             model_left=self.AGCJ59JLH_TAPE_LEFT_model, 
                                                                                                                             model_right=self.AGCJ59JLH_TAPE_RIGHT_model, 
@@ -1277,7 +1295,7 @@ class InspectionThread(QThread):
                                                                                                                             crop_height=128,
                                                                                                                             trim_left=0, trim_right=64,
                                                                                                                             left_width=256, right_width=256,
-                                                                                                                            dx_range_left=(18, 40), dx_range_right=(2, 25),
+                                                                                                                            dx_range_left=(15, 43), dx_range_right=(2, 25),
                                                                                                                             yolo_conf=0.1, yolo_iou=0.5,
                                                                                                                             center_class_id=0,                          # your target class
                                                                                                                             center_bbox_height_range=(1.0, 15.0),      # OK range in px
@@ -1298,7 +1316,6 @@ class InspectionThread(QThread):
                         ) = self.TapeCorrectInspectionImages_result[:5]
 
                         self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        #wait t=1 sec
                         time.sleep(0.5)
 
                         self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
@@ -1308,6 +1325,11 @@ class InspectionThread(QThread):
                         self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
                         self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
                         self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
+
+                        self.currentLot_NOP[0] = self.currentLot_NOP[0] + sum(self.InspectionResult_TapeID_OK)
+                        self.currentLot_NOP[1] = self.currentLot_NOP[1] + sum(self.InspectionResult_TapeID_NG)
+
+                        logging.info(f"Current Lot NOP Updated: OK={self.currentLot_NOP[0]}, NG={self.currentLot_NOP[1]}")
 
                         for i, d in enumerate(self.InspectionResult_DetectionID):
                             if d == 1:
@@ -1333,6 +1355,16 @@ class InspectionThread(QThread):
                         self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
                         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
                         print("Inspection Result Tape ID Emitted")
+
+                        self.SerialNumber_signal.emit(self.current_SerialNumber)
+                        self.LotNumber_signal.emit(self.current_LotNumber)
+
+                        self.prev_LotNumber = self.current_LotNumber
+                        self.prev_SerialNumber = self.current_SerialNumber
+                        self.temp_prev_NG = sum(self.InspectionResult_TapeID_NG)
+                        self.temp_prev_OK = sum(self.InspectionResult_TapeID_OK)
+
+
                         # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
                         time.sleep(0.5)
 
@@ -1430,7 +1462,7 @@ class InspectionThread(QThread):
                             SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
                             self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
 
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = J30_Check(
+                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = JXX_Check(
                                                                                                             self.SetCorrectInspectionImages[i],
                                                                                                             model_left=self.AGCJ59JRH_SET_LEFT_model,
                                                                                                             model_right=self.AGCJ59JRH_SET_RIGHT_model,
@@ -1564,7 +1596,7 @@ class InspectionThread(QThread):
                             self.TapeCorrectInspectionImages[i] = crop
                             TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
                             self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = J30_Check(
+                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
                                                                                                                             self.TapeCorrectInspectionImages[i], 
                                                                                                                             model_left=self.AGCJ59JRH_TAPE_LEFT_model, 
                                                                                                                             model_right=self.AGCJ59JRH_TAPE_RIGHT_model, 
@@ -1729,20 +1761,20 @@ class InspectionThread(QThread):
                 PPMS = "MANUAL")
         return [ok_count_current, ng_count_current], [ok_count_total, ng_count_total]
     
-    def save_result_database(self, partname, numofPart, 
-                             currentnumofPart, deltaTime, 
+    def save_result_database(self, partname, lotNumber, 
+                             serialNumber, currentLOTNOP, 
+                             timestampDate,
                              kensainName, 
-                             status, NGreason, PPMS):
+                             ):
 
         timestamp = datetime.now()
-        timestamp_date = timestamp.strftime("%Y%m%d")
-        timestamp_hour = timestamp.strftime("%H:%M:%S")
+        #user format of Y M D H M S
+        timestamp = datetime.now()
 
         partname = str(partname)
         numofPart = str(numofPart)
         currentnumofPart = str(currentnumofPart)
-        timestamp_hour = str(timestamp_hour)
-        timestamp_date = str(timestamp_date)
+        timestamp = str(timestamp)
         deltaTime = float(deltaTime)  # Ensure this is a float
         kensainName = str(kensainName)
         status = str(status)

@@ -871,7 +871,7 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QPushButton" name="furyou_plus_10">
     <property name="geometry">
      <rect>
-      <x>240</x>
+      <x>250</x>
       <y>900</y>
       <width>41</width>
       <height>21</height>
@@ -892,7 +892,7 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QPushButton" name="kansei_plus_10">
     <property name="geometry">
      <rect>
-      <x>240</x>
+      <x>250</x>
       <y>845</y>
       <width>41</width>
       <height>21</height>
@@ -941,7 +941,7 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QPushButton" name="kansei_plus">
     <property name="geometry">
      <rect>
-      <x>310</x>
+      <x>320</x>
       <y>845</y>
       <width>41</width>
       <height>21</height>
@@ -1048,7 +1048,7 @@ background-color: rgb(38, 162, 105);</string>
    <widget class="QPushButton" name="furyou_minus_10">
     <property name="geometry">
      <rect>
-      <x>240</x>
+      <x>250</x>
       <y>925</y>
       <width>41</width>
       <height>21</height>
@@ -1098,7 +1098,7 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QPushButton" name="counterReset">
     <property name="geometry">
      <rect>
-      <x>365</x>
+      <x>375</x>
       <y>845</y>
       <width>121</width>
       <height>41</height>
@@ -1158,7 +1158,7 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QPushButton" name="furyou_minus">
     <property name="geometry">
      <rect>
-      <x>310</x>
+      <x>320</x>
       <y>925</y>
       <width>41</width>
       <height>21</height>
@@ -1207,7 +1207,7 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QPushButton" name="kansei_minus">
     <property name="geometry">
      <rect>
-      <x>310</x>
+      <x>320</x>
       <y>870</y>
       <width>41</width>
       <height>21</height>
@@ -1228,7 +1228,7 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QPushButton" name="kansei_minus_10">
     <property name="geometry">
      <rect>
-      <x>240</x>
+      <x>250</x>
       <y>870</y>
       <width>41</width>
       <height>21</height>
@@ -1249,7 +1249,7 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QPushButton" name="furyou_plus">
     <property name="geometry">
      <rect>
-      <x>310</x>
+      <x>320</x>
       <y>900</y>
       <width>41</width>
       <height>21</height>
@@ -1270,9 +1270,9 @@ background-color: rgb(238, 238, 236);</string>
    <widget class="QLabel" name="label_5">
     <property name="geometry">
      <rect>
-      <x>1280</x>
-      <y>940</y>
-      <width>221</width>
+      <x>1150</x>
+      <y>850</y>
+      <width>131</width>
       <height>41</height>
      </rect>
     </property>
@@ -1289,18 +1289,18 @@ background-color: rgb(238, 238, 236);</string>
      <string notr="true">color: rgb(238, 238, 236);</string>
     </property>
     <property name="text">
-     <string>シーケンサー Status:</string>
+     <string>SERIAL NO</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignCenter</set>
     </property>
    </widget>
-   <widget class="QLabel" name="status_PLC">
+   <widget class="QLabel" name="status_SERIALNO">
     <property name="geometry">
      <rect>
-      <x>1510</x>
-      <y>940</y>
-      <width>61</width>
+      <x>1300</x>
+      <y>850</y>
+      <width>311</width>
       <height>41</height>
      </rect>
     </property>
@@ -1314,10 +1314,10 @@ background-color: rgb(238, 238, 236);</string>
      </font>
     </property>
     <property name="styleSheet">
-     <string notr="true">color: rgb(238, 15, 15);</string>
+     <string notr="true">color: rgb(100, 15, 215);</string>
     </property>
     <property name="text">
-     <string>OFF</string>
+     <string>XXX</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignCenter</set>
@@ -1472,10 +1472,93 @@ Tape Inspection</string>
      </property>
     </item>
    </widget>
+   <widget class="QLabel" name="label_10">
+    <property name="geometry">
+     <rect>
+      <x>1140</x>
+      <y>910</y>
+      <width>141</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Ubuntu Mono</family>
+      <pointsize>17</pointsize>
+      <weight>50</weight>
+      <bold>false</bold>
+      <underline>false</underline>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color: rgb(238, 238, 236);</string>
+    </property>
+    <property name="text">
+     <string>LOT NO</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+   </widget>
+   <widget class="QLabel" name="status_LOTNO">
+    <property name="geometry">
+     <rect>
+      <x>1310</x>
+      <y>910</y>
+      <width>291</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Ubuntu Mono</family>
+      <pointsize>17</pointsize>
+      <weight>75</weight>
+      <bold>true</bold>
+      <underline>false</underline>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color: rgb(238, 15, 15);</string>
+    </property>
+    <property name="text">
+     <string>XXX</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+   </widget>
+   <widget class="QLabel" name="block">
+    <property name="geometry">
+     <rect>
+      <x>240</x>
+      <y>830</y>
+      <width>471</width>
+      <height>121</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Ubuntu Mono</family>
+      <pointsize>17</pointsize>
+      <weight>50</weight>
+      <bold>false</bold>
+      <underline>false</underline>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color: rgb(238, 238, 236);</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+   </widget>
    <zorder>label_12</zorder>
    <zorder>line_1</zorder>
    <zorder>line_2</zorder>
-   <zorder>frame</zorder>
    <zorder>mainmenubutton</zorder>
    <zorder>partlabel_2</zorder>
    <zorder>partlabel_3</zorder>
@@ -1511,12 +1594,16 @@ Tape Inspection</string>
    <zorder>kansei_minus_10</zorder>
    <zorder>furyou_plus</zorder>
    <zorder>label_5</zorder>
-   <zorder>status_PLC</zorder>
+   <zorder>status_SERIALNO</zorder>
    <zorder>InspectTapeButton</zorder>
    <zorder>nichijoutenken_radio</zorder>
    <zorder>comboSelection</zorder>
    <zorder>debug_mode_radio</zorder>
    <zorder>comboSelection_ONOFF</zorder>
+   <zorder>label_10</zorder>
+   <zorder>status_LOTNO</zorder>
+   <zorder>block</zorder>
+   <zorder>frame</zorder>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
@@ -1524,7 +1611,7 @@ Tape Inspection</string>
      <x>0</x>
      <y>0</y>
      <width>1920</width>
-     <height>21</height>
+     <height>20</height>
     </rect>
    </property>
   </widget>

@@ -1,10 +1,120 @@
 import atexit
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Union, Tuple, Optional, Iterable
+
 import numpy as np
 import cv2
 import imagingcontrol4 as ic4
 
+
+# =============================================================================
+# Placeholder capture (cv2.VideoCapture-like)
+# =============================================================================
+
+@dataclass
+class PlaceholderIC4Capture:
+    """
+    Drop-in replacement for IC4Capture when no camera is available.
+
+    - isOpened() -> True
+    - read(timeout_ms=...) -> (True, frame) where frame is ALWAYS (height,width,3) BGR
+    - get/set methods exist to match your usage.
+    """
+    cam_id_or_serial: Union[int, str]
+    width: int = 3072
+    height: int = 2048
+    fps: float = 30.0
+    color: bool = True
+    placeholder_path: str = "./aikensa/assets/no_camera.png"
+    _open: bool = True
+    _frame_bgr: Optional[np.ndarray] = None
+
+    # cv2-like API
+    def isOpened(self) -> bool:
+        return self._open
+
+    def release(self):
+        self._open = False
+
+    def read(self, timeout_ms: int = 1000) -> Tuple[bool, Optional[np.ndarray]]:
+        if not self._open:
+            return False, None
+        frame = self._get_or_make_frame()
+        return True, frame.copy()
+
+    # Keep compatibility with your `.get()` usage
+    _W   = getattr(cv2, "CAP_PROP_FRAME_WIDTH", 3)
+    _H   = getattr(cv2, "CAP_PROP_FRAME_HEIGHT", 4)
+    _FPS = getattr(cv2, "CAP_PROP_FPS", 5)
+    _EXP = getattr(cv2, "CAP_PROP_EXPOSURE", 15)
+    _GAIN= getattr(cv2, "CAP_PROP_GAIN", 14)
+    _WB  = getattr(cv2, "CAP_PROP_WB_TEMPERATURE", 45)
+
+    def get(self, prop_id: int) -> float:
+        if prop_id == self._W:
+            return float(self.width)
+        if prop_id == self._H:
+            return float(self.height)
+        if prop_id == self._FPS:
+            return float(self.fps)
+        # Not meaningful for placeholder but keep API
+        if prop_id in (self._EXP, self._GAIN, self._WB):
+            return 0.0
+        return 0.0
+
+    def set(self, prop_id: int, value: float) -> bool:
+        if prop_id == self._FPS:
+            self.fps = float(value)
+            return True
+        # ignore EXP/GAIN/WB sets
+        return True
+
+    def _get_or_make_frame(self) -> np.ndarray:
+        if self._frame_bgr is not None:
+            return self._frame_bgr
+
+        # Load image if exists
+        img = None
+        p = Path(self.placeholder_path)
+        if p.exists():
+            img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
+
+        if img is None:
+            # Fallback: generated black image with text
+            img = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+            txt = f"NO CAMERA (PLACEHOLDER)\nID: {self.cam_id_or_serial}"
+            y = 120
+            for line in txt.splitlines():
+                cv2.putText(
+                    img,
+                    line,
+                    (60, y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    2.0,
+                    (255, 255, 255),
+                    3,
+                    cv2.LINE_AA,
+                )
+                y += 80
+        else:
+            # Normalize to BGR 3ch
+            if img.ndim == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            elif img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+
+        # Enforce requested resolution exactly (3072x2048 default)
+        img = cv2.resize(img, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+
+        self._frame_bgr = img
+        return img
+
+
+# =============================================================================
 # ---- one-time SDK context ----
+# =============================================================================
+
 _IC4_CTX = None
 def _ensure_ic4_context():
     global _IC4_CTX
@@ -35,7 +145,8 @@ def _find_device(index_or_serial: Union[int, str]) -> ic4.DeviceInfo:
 # handy helpers for tolerant property IO
 def _try_set(pm: ic4.PropertyMap, prop_ids: Iterable, value) -> bool:
     for pid in prop_ids:
-        if pid is None: continue
+        if pid is None:
+            continue
         try:
             pm.set_value(pid, value)
             return True
@@ -45,7 +156,8 @@ def _try_set(pm: ic4.PropertyMap, prop_ids: Iterable, value) -> bool:
 
 def _try_get_int(pm: ic4.PropertyMap, prop_ids: Iterable) -> Optional[int]:
     for pid in prop_ids:
-        if pid is None: continue
+        if pid is None:
+            continue
         try:
             return int(pm.get_value_int(pid))
         except ic4.IC4Exception:
@@ -54,7 +166,8 @@ def _try_get_int(pm: ic4.PropertyMap, prop_ids: Iterable) -> Optional[int]:
 
 def _try_get_float(pm: ic4.PropertyMap, prop_ids: Iterable) -> Optional[float]:
     for pid in prop_ids:
-        if pid is None: continue
+        if pid is None:
+            continue
         try:
             return float(pm.get_value_float(pid))
         except ic4.IC4Exception:
@@ -63,12 +176,14 @@ def _try_get_float(pm: ic4.PropertyMap, prop_ids: Iterable) -> Optional[float]:
 
 def _try_get_str(pm: ic4.PropertyMap, prop_ids: Iterable) -> Optional[str]:
     for pid in prop_ids:
-        if pid is None: continue
+        if pid is None:
+            continue
         try:
             return pm.get_value_str(pid)
         except ic4.IC4Exception:
             continue
     return None
+
 
 # PropId aliases (be tolerant across models)
 PID_PIXEL_FORMAT       = getattr(ic4.PropId, "PIXEL_FORMAT", None)
@@ -91,6 +206,7 @@ PID_ACQ_FRAME_RATE     = getattr(ic4.PropId, "ACQUISITION_FRAME_RATE", None)
 PID_ACQ_FR_EN          = getattr(ic4.PropId, "ACQUISITION_FRAME_RATE_ENABLE", None)
 
 PF = ic4.PixelFormat
+
 
 class IC4Capture:
     _W   = getattr(cv2, "CAP_PROP_FRAME_WIDTH", 3)
@@ -171,7 +287,8 @@ class IC4Capture:
             self._convert = cv2.COLOR_YUV2BGR_YUY2  # adjust to UYVY if needed
 
     # cv2-like API
-    def isOpened(self) -> bool: return self._open
+    def isOpened(self) -> bool:
+        return self._open
 
     def release(self):
         if self._open:
@@ -191,8 +308,7 @@ class IC4Capture:
         if buf is None:
             return False, None
 
-        frame = buf.numpy_copy()              # <- independent NumPy array
-        # If you prefer zero-copy, use: frame = buf.numpy_wrap()   (but keep 'buf' alive)
+        frame = buf.numpy_copy()              # independent NumPy array
         if self._convert is not None:
             frame = cv2.cvtColor(frame, self._convert)
         return True, frame
@@ -220,7 +336,8 @@ class IC4Capture:
             if prop_id == self._FPS:
                 _try_set(pm, (PID_ACQ_FR_EN,), True)
                 ok = _try_set(pm, (PID_ACQ_FRAME_RATE, PID_FRAME_RATE), float(value))
-                if ok: self._fps = float(value)
+                if ok:
+                    self._fps = float(value)
                 return ok
             if prop_id == self._EXP:
                 _try_set(pm, (PID_EXPOSURE_AUTO,), "Off")
@@ -238,21 +355,61 @@ class IC4Capture:
             return False
         return False
 
-def initialize_camera_ic4(cam_id_or_serial: Union[int, str],
-                          width: int = 3072,
-                          height: int = 2048,
-                          fps: float = 30.0,
-                          color: bool = True,
-                          exposure_us: float | None = None,
-                          gain_db: float | None = None,
-                          wb_temperature: int | None = None,
-                          auto_exposure: bool = False,
-                          auto_gain: bool = False,
-                          auto_wb: bool = False) -> IC4Capture:
-    cam = IC4Capture(cam_id_or_serial, width, height, fps, color,
-                     exposure_us, gain_db, wb_temperature)
-    pm = cam._grab.device_property_map
-    pm.set_value(ic4.PropId.EXPOSURE_AUTO, auto_exposure)
-    pm.set_value(ic4.PropId.GAIN_AUTO, auto_gain)
-    pm.set_value(ic4.PropId.BALANCE_WHITE_AUTO, auto_wb)
-    return cam
+
+# =============================================================================
+# Public initializer with check-gate + placeholder fallback
+# =============================================================================
+
+def initialize_camera_ic4(
+    cam_id_or_serial: Union[int, str],
+    width: int = 3072,
+    height: int = 2048,
+    fps: float = 30.0,
+    color: bool = True,
+    exposure_us: float | None = None,
+    gain_db: float | None = None,
+    wb_temperature: int | None = None,
+    auto_exposure: bool = False,
+    auto_gain: bool = False,
+    auto_wb: bool = False,
+    *,
+    fallback_to_placeholder: bool = True,
+    placeholder_path: str = "./aikensa/assets/no_camera.png",
+):
+    """
+    If camera init/config fails -> return PlaceholderIC4Capture.
+    Placeholder returns a static frame at exactly (width,height) = (3072,2048) by default.
+    """
+    try:
+        cam = IC4Capture(
+            cam_id_or_serial,
+            width, height, fps, color,
+            exposure_us, gain_db, wb_temperature
+        )
+
+        # Apply auto toggles (tolerant)
+        pm = cam._grab.device_property_map
+        _try_set(pm, (PID_EXPOSURE_AUTO,), auto_exposure)
+        _try_set(pm, (PID_GAIN_AUTO,), auto_gain)
+        _try_set(pm, (PID_WB_AUTO,), auto_wb)
+
+        # Gate: try a first frame so you immediately know it's usable
+        ok, frame = cam.read(timeout_ms=1000)
+        if not ok or frame is None:
+            raise RuntimeError("Camera opened but first frame grab failed.")
+
+        return cam
+
+    except Exception as e:
+        if not fallback_to_placeholder:
+            raise
+
+        print(f"[initialize_camera_ic4] Using placeholder (camera unavailable). Reason: {e}")
+        return PlaceholderIC4Capture(
+            cam_id_or_serial=cam_id_or_serial,
+            width=width,
+            height=height,
+            fps=fps,
+            color=color,
+            placeholder_path=placeholder_path,
+        )

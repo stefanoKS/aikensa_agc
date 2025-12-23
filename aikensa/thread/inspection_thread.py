@@ -395,62 +395,49 @@ class InspectionThread(QThread):
             print("Camera 0 released.")
 
     def run(self):
-        #initialize the database
-        if not os.path.exists("./aikensa/inspection_results"):
-            os.makedirs("./aikensa/inspection_results")
 
-        self.conn = sqlite3.connect('./aikensa/inspection_results/agc_database_results.db')
+        db_dir = "./aikensa/inspection_results"
+        os.makedirs(db_dir, exist_ok=True)
+
+        db_path = os.path.join(db_dir, "agc_database_results.db")
+
+        self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
-        # Create the table if it doesn't exist
-        self.cursor.execute('''
+
+        # good defaults for app usage
+        self.cursor.execute("PRAGMA journal_mode=WAL;")
+        self.cursor.execute("PRAGMA synchronous=NORMAL;")
+
+        # Log table (one row per inspection)
+        self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS inspection_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            partName TEXT,
-            lotNumber TEXT,
-            serialNumber TEXT,
-            currentLotNOP TEXT,
-            timestampDate TEXT,
-            kensainName TEXT
+            partName     INTEGER NOT NULL,  -- 5/6/7/8
+            lotNumber    TEXT    NOT NULL,
+            serialNumber TEXT    NOT NULL,
+            ok_add       INTEGER NOT NULL DEFAULT 0,
+            ng_add       INTEGER NOT NULL DEFAULT 0,
+            timestamp    TEXT    NOT NULL,
+            kensainName  TEXT
         )
-        ''')
+        """)
+
+        # Prevent duplicates: at most one row per (part, lot, serial)
+        self.cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_part_lot_serial
+        ON inspection_results(partName, lotNumber, serialNumber)
+        """)
+
+        # Speed up SUM + latest queries
+        self.cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_part_lot_time
+        ON inspection_results(partName, lotNumber, timestamp)
+        """)
 
         self.conn.commit()
+        
 
-        # #Initialize connection to mysql server if available
-        # try:
-        #     self.mysql_conn = mysql.connector.connect(
-        #         host=self.mysqlHost,
-        #         user=self.mysqlID,
-        #         password=self.mysqlPassword,
-        #         port=self.mysqlHostPort,
-        #         database="AIKENSAresults"
-        #     )
-        #     print(f"Connected to MySQL database at {self.mysqlHost}")
-        # except Exception as e:
-        #     print(f"Error connecting to MySQL database: {e}")
-        #     self.mysql_conn = None
 
-        # #try adding data to the schema in mysql
-        # if self.mysql_conn is not None:
-        #     self.mysql_cursor = self.mysql_conn.cursor()
-        #     self.mysql_cursor.execute('''
-        #         CREATE TABLE IF NOT EXISTS AGC_tapehari_inspection_results (
-        #             id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        #             partName TEXT,
-        #             numofPart TEXT,
-        #             currentnumofPart TEXT,
-        #             timestampHour TEXT,
-        #             timestampDate TEXT,
-        #             deltaTime REAL,
-        #             kensainName TEXT,
-        #             status TEXT,
-        #             NGreason TEXT,
-        #             PPMS TEXT
-        #         )
-        #     ''')
-        #     self.mysql_conn.commit()
-
-        #print thread started
         print("Inspection Thread Started")
         self.initialize_model()
         print("AI Model Initialized")
@@ -1239,14 +1226,12 @@ class InspectionThread(QThread):
                 if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
 
                     if self.InstructionCode_prev == 2:
-                        pass
-                        print("Already processed Tape Inspection command, skipping..."  )
+                        print("Already processed Tape Inspection command, skipping...")
                     else:
-                    # if self.InstructionCode == 2:
                         self.InstructionCode_prev = self.InstructionCode
                         self.inspection_config.doTapeInspection = False
 
-                        # Tray detection
+                        # ---- Tray detection ----
                         self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
                         self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
 
@@ -1254,14 +1239,14 @@ class InspectionThread(QThread):
                         self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
                         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
 
-                        # self.InspectionResult_Tray_NG = 0
                         if self.Tray_detection_left_result == 4 and self.Tray_detection_right_result == 5:
-                            print ("Tray detected as J59JLH correctly.")
+                            print("Tray detected as J59JLH correctly.")
                             self.InspectionResult_Tray_NG = 0
                         else:
-                            print ("Tray detection failed or incorrect tray.")
+                            print("Tray detection failed or incorrect tray.")
                             self.InspectionResult_Tray_NG = 1
 
+                        # ---- IV4 bypass (unchanged) ----
                         if self.lotASCIICode_1 == 22089 and self.lotASCIICode_2 == 52:
                             print("IV4 detected, skipping Tape Inspection...")
                             self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
@@ -1274,54 +1259,54 @@ class InspectionThread(QThread):
                             time.sleep(0.5)
                             continue
 
-                        is_overwrite = (
-                            self.prev_LotNumber == self.current_LotNumber
-                            and self.prev_SerialNumber == self.current_SerialNumber
+                        # ---- DB-backed baseline NOP (survives reboot + supports overwrite of same lot+serial) ----
+                        # This returns lot totals EXCLUDING existing row for this (lot,serial) if it exists.
+                        self.prevLot_NOP = getattr(self, "currentLot_NOP", [0, 0]).copy()
+                        self.currentLot_NOP = self.get_last_entry_currentnumofPart(
+                            partName=int(self.inspection_config.widget),
+                            lotNumber=str(self.current_LotNumber),
+                            serialNumber=str(self.current_SerialNumber),
                         )
 
-                        if is_overwrite:
-                            print("Same lot+serial -> overwrite. Restore baseline counter.")
-                            self.currentLot_NOP = self.prevLot_NOP.copy()
-
-                        # check whether set part is set correctly
+                        # ---- Main inspection ----
                         parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-                        
+
                         N_PARTS = 5
-                        # ensure these are indexable
-                        self.TapeExistInspectionImages        = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
+                        self.TapeExistInspectionImages = [None] * N_PARTS
+                        self.TapeCorrectInspectionImages = [None] * N_PARTS
                         self.TapeCorrectInspectionImages_result = [None] * N_PARTS
-                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
-                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
+                        self.InspectionResult_DetectionID = [0] * N_PARTS
+                        self.InspectionResult_TapeID_OK = [0] * N_PARTS
 
                         for i, crop in enumerate(parts):
-
                             self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
                             self.TapeCorrectInspectionImages[i] = crop
-                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
+
+                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(
+                                self.TapeExistInspectionImages[i], stream=True, verbose=False, imgsz=512
+                            )
                             self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
+
                             self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
-                                                                                                                            self.TapeCorrectInspectionImages[i], 
-                                                                                                                            model_left=self.AGCJ59JLH_TAPE_LEFT_model, 
-                                                                                                                            model_right=self.AGCJ59JLH_TAPE_RIGHT_model, 
-                                                                                                                            model_center=self.AGCJ59JLH_TAPE_CENTER_model,
-                                                                                                                            enable_center=True,
-                                                                                                                            crop_from_top=False,
-                                                                                                                            crop_from_bottom=True,
-                                                                                                                            crop_height=128,
-                                                                                                                            trim_left=0, trim_right=64,
-                                                                                                                            left_width=256, right_width=256,
-                                                                                                                            dx_range_left=(15, 43), dx_range_right=(2, 25),
-                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
-                                                                                                                            center_class_id=0,                          # your target class
-                                                                                                                            center_bbox_height_range=(1.0, 15.0),      # OK range in px
-                                                                                                                            center_pad=(0, 0, 0, 0), 
-                                                                                                                            debug_mode = self.debug,
-                                                                                                                            yolo_imgsz_side = 384,
-                                                                                                                            yolo_imgsz_center = 256,
-                                                                                                                        )
-
-
+                                self.TapeCorrectInspectionImages[i],
+                                model_left=self.AGCJ59JLH_TAPE_LEFT_model,
+                                model_right=self.AGCJ59JLH_TAPE_RIGHT_model,
+                                model_center=self.AGCJ59JLH_TAPE_CENTER_model,
+                                enable_center=True,
+                                crop_from_top=False,
+                                crop_from_bottom=True,
+                                crop_height=128,
+                                trim_left=0, trim_right=64,
+                                left_width=256, right_width=256,
+                                dx_range_left=(15, 43), dx_range_right=(2, 25),
+                                yolo_conf=0.1, yolo_iou=0.5,
+                                center_class_id=0,
+                                center_bbox_height_range=(1.0, 15.0),
+                                center_pad=(0, 0, 0, 0),
+                                debug_mode=self.debug,
+                                yolo_imgsz_side=384,
+                                yolo_imgsz_center=256,
+                            )
 
                         (
                             self.part1Crop,
@@ -1335,7 +1320,7 @@ class InspectionThread(QThread):
                         time.sleep(0.5)
 
                         self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        print (self.InspectionResult_DetectionID)
+                        print(self.InspectionResult_DetectionID)
                         self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
 
                         self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
@@ -1347,10 +1332,6 @@ class InspectionThread(QThread):
                                 self.InspectionResult_TapeID_OK[i] = 0
                                 self.InspectionResult_TapeID_NG[i] = 0
 
-                        self.prevLot_NOP = self.currentLot_NOP.copy()
-                        self.currentLot_NOP[0] = self.currentLot_NOP[0] + sum(self.InspectionResult_TapeID_OK)
-                        self.currentLot_NOP[1] = self.currentLot_NOP[1] + sum(self.InspectionResult_TapeID_NG)
-             
                         print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
                         print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
                         print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
@@ -1361,7 +1342,33 @@ class InspectionThread(QThread):
 
                         print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
 
-                        #Emit the inspection result and serial number to holding registers
+                        # ---- Update DB with this inspection contribution (delete+replace if same lot+serial) ----
+                        ok_add = int(sum(self.InspectionResult_TapeID_OK))
+                        ng_add = int(sum(self.InspectionResult_TapeID_NG))
+
+                        # Save row (handles overwrite by deleting same (part,lot,serial) then inserting new)
+                        # currentLOTNOP is optional here; it is NOT required for totals
+                        self.save_result_database(
+                            partName=int(self.inspection_config.widget),
+                            lotNumber=str(self.current_LotNumber),
+                            serialNumber=str(self.current_SerialNumber),
+                            currentLOTNOP=self.currentLot_NOP,
+                            timestampDate=None,
+                            kensainName=str(getattr(self, "kensainName", "")),
+                            ok_add=ok_add,
+                            ng_add=ng_add,
+                        )
+
+                        # Refresh current lot totals from DB (authoritative)
+                        self.cursor.execute("""
+                            SELECT COALESCE(SUM(ok_add), 0), COALESCE(SUM(ng_add), 0)
+                            FROM inspection_results
+                            WHERE partName=? AND lotNumber=?
+                        """, (int(self.inspection_config.widget), str(self.current_LotNumber)))
+                        ok_total, ng_total = self.cursor.fetchone()
+                        self.currentLot_NOP = [int(ok_total), int(ng_total)]
+
+                        # ---- Emit to PLC ----
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
                         self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
                         self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
@@ -1376,15 +1383,12 @@ class InspectionThread(QThread):
 
                         self.prev_LotNumber = self.current_LotNumber
                         self.prev_SerialNumber = self.current_SerialNumber
-                        self.temp_prev_NG = sum(self.InspectionResult_TapeID_NG)
-                        self.temp_prev_OK = sum(self.InspectionResult_TapeID_OK)
+                        self.temp_prev_NG = ng_add
+                        self.temp_prev_OK = ok_add
 
-
-                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
                         time.sleep(0.5)
 
                         #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected tape images for training (compact & safe)
                         save_dir = "./aikensa/training_images/tape"
                         os.makedirs(save_dir, exist_ok=True)
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1395,7 +1399,9 @@ class InspectionThread(QThread):
                             cv2.imwrite(filename, img)
                             print(f"Saved {filename}")
                         #######(SAVE IMAGES FOR TRAINING)##########
-                        
+
+
+
                 if self.InstructionCode == 3:
 
                     if self.InstructionCode_prev == 3:
@@ -1903,93 +1909,78 @@ class InspectionThread(QThread):
                 PPMS = "MANUAL")
         return [ok_count_current, ng_count_current], [ok_count_total, ng_count_total]
     
-    def save_result_database(self, partname, lotNumber, 
-                             serialNumber, currentLOTNOP, 
-                             timestampDate,
-                             kensainName, 
-                             ):
+    def save_result_database(
+        self,
+        partName: int,          # 5/6/7/8
+        lotNumber: str,
+        serialNumber: str,
+        currentLOTNOP: list[int],   # [ok_total, ng_total] (optional usage)
+        timestampDate: str | None,  # you can pass None; we'll compute
+        kensainName: str,
+        ok_add: int,
+        ng_add: int,
+    ):
+        partName = int(partName)
+        lotNumber = str(lotNumber)
+        serialNumber = str(serialNumber)
+        ok_add = int(ok_add)
+        ng_add = int(ng_add)
 
-        timestamp = datetime.now()
-        #user format of Y M D H M S
-        timestamp = datetime.now()
+        ts = datetime.now()
+        ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
 
-        partname = str(partname)
-        numofPart = str(numofPart)
-        currentnumofPart = str(currentnumofPart)
-        timestamp = str(timestamp)
-        deltaTime = float(deltaTime)  # Ensure this is a float
-        kensainName = str(kensainName)
-        status = str(status)
-        NGreason = str(NGreason)
-        PPMS = str(PPMS)
+        try:
+            self.cursor.execute("BEGIN")
 
-        self.cursor.execute('''
-        INSERT INTO inspection_results (partname, numofPart, currentnumofPart, timestampHour, timestampDate, deltaTime, kensainName, status, NGreason, PPMS)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, status, NGreason, PPMS))
-        self.conn.commit()
+            # delete old row if exists (same lot+serial+part)
+            self.cursor.execute("""
+                DELETE FROM inspection_results
+                WHERE partName=? AND lotNumber=? AND serialNumber=?
+            """, (partName, lotNumber, serialNumber))
 
-        # Update the totatl part number (Maybe the day has been changed)
-        for key, value in self.widget_dir_map.items():
-            self.inspection_config.today_numofPart[key] = self.get_last_entry_total_numofPart(value)
+            # insert new row
+            self.cursor.execute("""
+                INSERT INTO inspection_results
+                    (partName, lotNumber, serialNumber, ok_add, ng_add, timestamp, kensainName)
+                VALUES
+                    (?,       ?,        ?,           ?,      ?,      ?,         ?)
+            """, (partName, lotNumber, serialNumber, ok_add, ng_add, ts_str, str(kensainName)))
 
-        # try:
-        #     self.mysql_cursor.execute('''
-        #     INSERT INTO inspection_results (partName, numofPart, currentnumofPart, timestampHour, timestampDate, deltaTime, kensainName, detected_pitch, delta_pitch, total_length, resultpitch, status, NGreason)
-        #     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        #     ''', (partname, numofPart, currentnumofPart, timestamp_hour, timestamp_date, deltaTime, kensainName, detected_pitch_str, delta_pitch_str, total_length, resultPitch, status, NGreason))
-        #     self.mysql_conn.commit()
-        # except Exception as e:
-        #     print(f"Error saving to MySQL: {e}")
+            self.conn.commit()
 
-    def get_last_entry_currentnumofPart(self, part_name):
-        self.cursor.execute('''
-        SELECT currentnumofPart 
-        FROM inspection_results 
-        WHERE partName = ? 
-        ORDER BY id DESC 
-        LIMIT 1
-        ''', (part_name,))
-        
-        row = self.cursor.fetchone()
-        if row:
-            currentnumofPart = eval(row[0])
-            return currentnumofPart
-        else:
-            return [0, 0]
-            
-    def get_last_entry_total_numofPart(self, part_name):
-        # Get today's date in yyyymmdd format
-        today_date = datetime.now().strftime("%Y%m%d")
+        except Exception:
+            self.conn.rollback()
+            raise
 
-        self.cursor.execute('''
-        SELECT numofPart 
-        FROM inspection_results 
-        WHERE partName = ? AND timestampDate = ? 
-        ORDER BY id DESC 
-        LIMIT 1
-        ''', (part_name, today_date))
-        
-        row = self.cursor.fetchone()
-        if row:
-            numofPart = eval(row[0])  # Convert the string tuple to an actual tuple
-            return numofPart
-        else:
-            return [0, 0]  # Default values if no entry is found    def get_last_entry_currentnumofPart(self, part_name):
-        self.cursor.execute('''
-        SELECT currentnumofPart 
-        FROM inspection_results 
-        WHERE partName = ? 
-        ORDER BY id DESC 
-        LIMIT 1
-        ''', (part_name,))
-        
-        row = self.cursor.fetchone()
-        if row:
-            currentnumofPart = eval(row[0])
-            return currentnumofPart
-        else:
-            return [0, 0]
+    def get_last_entry_currentnumofPart(self, partName: int, lotNumber: str, serialNumber: str) -> list[int]:
+        partName = int(partName)
+        lotNumber = str(lotNumber)
+        serialNumber = str(serialNumber)
+
+        # total for this lot (all serials)
+        self.cursor.execute("""
+            SELECT COALESCE(SUM(ok_add), 0), COALESCE(SUM(ng_add), 0)
+            FROM inspection_results
+            WHERE partName=? AND lotNumber=?
+        """, (partName, lotNumber))
+        total_ok, total_ng = self.cursor.fetchone()
+        total_ok, total_ng = int(total_ok), int(total_ng)
+
+        # if this serial already exists, subtract it -> baseline
+        self.cursor.execute("""
+            SELECT ok_add, ng_add
+            FROM inspection_results
+            WHERE partName=? AND lotNumber=? AND serialNumber=?
+            LIMIT 1
+        """, (partName, lotNumber, serialNumber))
+        old = self.cursor.fetchone()
+
+        if old:
+            old_ok, old_ng = int(old[0]), int(old[1])
+            total_ok = max(total_ok - old_ok, 0)
+            total_ng = max(total_ng - old_ng, 0)
+
+        return [total_ok, total_ng]
         
     def _resolve_yaml_path(self, yaml_path: str) -> str:
         abs_from_cwd = os.path.abspath(yaml_path)

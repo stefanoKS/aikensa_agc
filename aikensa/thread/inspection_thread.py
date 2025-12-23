@@ -1274,12 +1274,14 @@ class InspectionThread(QThread):
                             time.sleep(0.5)
                             continue
 
-                        if self.prev_LotNumber == self.current_LotNumber or self.prev_SerialNumber == self.current_SerialNumber:
-                            #Counter need to be reset to the prev value
-                            print("Serial Number or Lot Number unchanged, adjusting counter to previous value.")
-                            self.currentLot_NOP[0] = self.prevLot_NOP[0]
-                            self.currentLot_NOP[1] = self.prevLot_NOP[1]
+                        is_overwrite = (
+                            self.prev_LotNumber == self.current_LotNumber
+                            and self.prev_SerialNumber == self.current_SerialNumber
+                        )
 
+                        if is_overwrite:
+                            print("Same lot+serial -> overwrite. Restore baseline counter.")
+                            self.currentLot_NOP = self.prevLot_NOP.copy()
 
                         # check whether set part is set correctly
                         parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
@@ -1471,7 +1473,6 @@ class InspectionThread(QThread):
                         time.sleep(0.5)
 
                         self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        print (self.InspectionResult_DetectionID)
                         self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
 
                         self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
@@ -1505,11 +1506,6 @@ class InspectionThread(QThread):
 
                         self.SerialNumber_signal.emit(self.current_SerialNumber)
                         self.LotNumber_signal.emit(self.current_LotNumber)
-
-                        self.prev_LotNumber = self.current_LotNumber
-                        self.prev_SerialNumber = self.current_SerialNumber
-                        self.temp_prev_NG = sum(self.InspectionResult_TapeID_NG)
-                        self.temp_prev_OK = sum(self.InspectionResult_TapeID_OK)
 
 
                         # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction

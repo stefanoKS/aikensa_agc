@@ -9,6 +9,7 @@ import time
 import logging
 import sqlite3
 import mysql.connector
+import threading
 
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer, pyqtSlot
 from PyQt5.QtGui import QImage, QPixmap
@@ -277,6 +278,9 @@ class InspectionThread(QThread):
         self.test = 0
         self.firstTimeInspection = True
 
+        self.partNumber_modbus = None
+        self.InstructionCode_modbus = None
+
         self.partNumber = None
         self.partNumber_prev = None
         self.serialNumber_front = None
@@ -316,11 +320,9 @@ class InspectionThread(QThread):
     @pyqtSlot(dict)
     def on_holding_update(self, reg_dict):
         # Only called whenever the Modbus thread emits new data.
-        self.partNumber = reg_dict.get(50, 0)
+        self.partNumber_modbus = reg_dict.get(50, 0)
 
         # DEBUG
-        # self.partNumber = 4
-
         self.lotASCIICode_1 = reg_dict.get(52, 0)
         self.lotASCIICode_2 = reg_dict.get(53, 0)
         self.lotASCIICode_3 = reg_dict.get(54, 0)
@@ -339,7 +341,7 @@ class InspectionThread(QThread):
         self.serialNumber_front = reg_dict.get(62, 0)
         self.serialNumber_back  = reg_dict.get(63, 0)
 
-        self.InstructionCode    = reg_dict.get(100, 0)
+        self.InstructionCode_modbus = reg_dict.get(100, 0)
 
         #combine lot number front and back by appending them into singular number
         #Convert all the lotASCII Code to characters
@@ -356,8 +358,6 @@ class InspectionThread(QThread):
         )
         self.current_LotNumber = f"{self.lotASCIICode_chars}{self.lotNumber_back:05d}{self.lotNumber_front:05d}"
         self.current_SerialNumber = f"{self.serialNumber_back:05d}{self.serialNumber_front:05d}"
-
-        self.handle_part_number_update()
 
         #DEBUG
         print(f"lotASCIIcode: {self.lotASCIICode_1}, {self.lotASCIICode_2}, {self.lotASCIICode_3}, {self.lotASCIICode_4}, {self.lotASCIICode_5}, {self.lotASCIICode_6}, {self.lotASCIICode_7}, {self.lotASCIICode_8}")
@@ -462,6 +462,8 @@ class InspectionThread(QThread):
 
             if self.partNumber is not None:
                 self.handle_part_number_update()
+                self.partNumber = self.partNumber_modbus
+                self.InstructionCode = self.InstructionCode_modbus
 
             if self.inspection_config.nichijoutenken_mode == True:
                 if self.inspection_config.manual_part_selection == 1:

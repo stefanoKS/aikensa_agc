@@ -407,8 +407,8 @@ class AIKensa(QMainWindow):
             label = "AG 910930 RH"
         elif partNumber == 4:
             label = "AG 910931 LH"
-        # else:
-        #     label = "Unknown Part"
+        else:
+            label = "Unknown Part"
         partNumber_label = widget.findChild(QLabel, "partName")
 
         if partNumber != 0:

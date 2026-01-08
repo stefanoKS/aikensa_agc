@@ -320,7 +320,7 @@ class InspectionThread(QThread):
     @pyqtSlot(dict)
     def on_holding_update(self, reg_dict):
         # Only called whenever the Modbus thread emits new data.
-        self.partNumber_modbus = reg_dict.get(50, 0)
+        self.partNumber = reg_dict.get(50, 0)
 
         # DEBUG
         self.lotASCIICode_1 = reg_dict.get(52, 0)
@@ -462,7 +462,7 @@ class InspectionThread(QThread):
 
             if self.partNumber is not None:
                 self.handle_part_number_update()
-                self.partNumber = self.partNumber_modbus
+                # self.partNumber = self.partNumber_modbus
                 self.InstructionCode = self.InstructionCode_modbus
 
             if self.inspection_config.nichijoutenken_mode == True:

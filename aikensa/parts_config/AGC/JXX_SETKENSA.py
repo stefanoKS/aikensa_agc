@@ -554,7 +554,7 @@ def JXX_Check(img_bgr: np.ndarray,
               yolo_conf: float = YOLO_CONF,
               yolo_iou: float = YOLO_IOU,
               yolo_imgsz_side: int = 384,
-              yolo_imgsz_center: int = 384,
+              yolo_imgsz_center: int = 256,
               # --- L/R evaluation ---
               dx_range_left: Tuple[float, float] = DX_RANGE_LEFT,
               dx_range_right: Tuple[float, float] = DX_RANGE_RIGHT,

@@ -387,7 +387,7 @@ def _evaluate_center_tile_boxes(model_center: Any,
                                 annotated_bgr: Optional[np.ndarray] = None,
                                 draw: bool = True,
                                 debug_mode: bool = DEBUG_MODE,
-                                yolo_imgsz: int = 384
+                                yolo_imgsz: int = 196
                                 ) -> Dict[str, Any]:
     """
     - Pads the tile by 'pad' before inference.

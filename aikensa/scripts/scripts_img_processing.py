@@ -159,14 +159,14 @@ def aruco_detect_yolo(
     If no valid prediction is available, returns (default, None).
     """
 
-    # --- debug save (same as your original) ---
-    filename = "aruco_debug_gray.png"
-    base, ext = os.path.splitext(filename)
-    n = 1
-    while os.path.exists(filename):
-        filename = f"{base}_{n}{ext}"
-        n += 1
-    cv2.imwrite(filename, image_bgr)
+    # # --- debug save (same as your original) ---
+    # filename = "aruco_debug_gray.png"
+    # base, ext = os.path.splitext(filename)
+    # n = 1
+    # while os.path.exists(filename):
+    #     filename = f"{base}_{n}{ext}"
+    #     n += 1
+    # cv2.imwrite(filename, image_bgr)
 
     if image_bgr is None or image_bgr.size == 0:
         return default, None

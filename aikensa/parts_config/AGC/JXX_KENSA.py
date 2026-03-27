@@ -41,9 +41,8 @@ YOLO_IOU    = 0.50
 DRAW_RADIUS = 2
 DRAW_THICK  = 2
 
-# Center (object-detection) evaluation
-CENTER_CLASS_ID            = 0
-CENTER_BBOX_HEIGHT_RANGE   = (20.0, 60.0)   # OK if height in [min,max]
+# Center (classification) evaluation
+CENTER_OK_CLASS            = 0
 CENTER_PAD                 = (0, 0, 0, 0)   # (top, bottom, left, right) pad for center tiles
 
 # Per-side padding for keypoint models
@@ -65,7 +64,7 @@ class TileDetResult:
     classes: Optional[np.ndarray]               # (N,) or None
 
 @dataclass
-class J30Result:
+class JXXResult:
     annotated_bgr: np.ndarray
     left: TileDetResult
     right: TileDetResult
@@ -191,6 +190,14 @@ def _run_yolo_pose(model: Any, tile_bgr: np.ndarray, conf: float, iou: float, im
         print("⚠️ Warning: Empty tile passed to YOLO inference.")
         return None
     return model.predict(source=tile_bgr, conf=conf, iou=iou, verbose=False, save=False, imgsz=imgsz, max_det=max_det)
+
+
+def _run_yolo_classify(model: Any, tile_bgr: np.ndarray, imgsz: int = 256) -> Any:
+    """Run Ultralytics classification on a single np.ndarray tile."""
+    if tile_bgr is None or tile_bgr.size == 0:
+        print("⚠️ Warning: Empty tile passed to YOLO classification.")
+        return None
+    return model.predict(source=tile_bgr, verbose=False, save=False, imgsz=imgsz)
 
 
 def _pad_image(img: np.ndarray, pad: Tuple[int,int,int,int],
@@ -321,7 +328,7 @@ def _best_detection_xy_for_class(det: TileDetResult,
     return (x, y)
 
 
-def evaluate_sides_and_annotate(result: J30Result,
+def evaluate_sides_and_annotate(result: JXXResult,
                                 dx_range_left: Tuple[float, float],
                                 dx_range_right: Tuple[float, float],
                                 min_conf: float = 0.0,
@@ -372,101 +379,81 @@ def evaluate_sides_and_annotate(result: J30Result,
     return out
 
 # =========================
-# 6) Center scanning with padding (object detection; bbox height check)
+# 6) Center scanning with padding (classification)
 # =========================
 
-def _evaluate_center_tile_boxes(model_center: Any,
-                                tile_bgr: np.ndarray,
-                                tile_offset_xy: Tuple[int,int],
-                                *,
-                                conf: float,
-                                iou: float,
-                                class_id: int,
-                                height_range: Tuple[float,float],
-                                pad: Tuple[int,int,int,int]=(0,0,0,0),
-                                annotated_bgr: Optional[np.ndarray] = None,
-                                draw: bool = True,
-                                debug_mode: bool = DEBUG_MODE,
-                                yolo_imgsz: int = 384
-                                ) -> Dict[str, Any]:
+def _center_class_label(predicted_class: Optional[int]) -> str:
+    if predicted_class == 0:
+        return "OK"
+    if predicted_class == 1:
+        return "NG"
+    if predicted_class == 2:
+        return "NO PART"
+    return "UNKNOWN"
+
+
+def _evaluate_center_tile_classification(model_center: Any,
+                                         tile_bgr: np.ndarray,
+                                         tile_offset_xy: Tuple[int, int],
+                                         *,
+                                         ok_class: int,
+                                         pad: Tuple[int, int, int, int] = (0, 0, 0, 0),
+                                         annotated_bgr: Optional[np.ndarray] = None,
+                                         draw: bool = True,
+                                         debug_mode: bool = DEBUG_MODE,
+                                         yolo_imgsz: int = 256) -> Dict[str, Any]:
     """
-    - Pads the tile by 'pad' before inference.
-    - Runs object detection via Ultralytics.
-    - Picks highest-confidence detection of 'class_id'.
-    - Renormalizes bbox back to *pre-padding* coords, maps to GLOBAL coords.
-    - Computes bbox height (y2 - y1) in GLOBAL coords.
-    - OK iff height in 'height_range'. If debug_mode=True, force OK=True.
-    Returns dict: {'ok', 'height', 'box_xyxy', 'score', 'cls'}
+    Pads each center tile and runs Ultralytics classification.
+    A tile passes only when the top-1 predicted class matches ok_class.
+    Returns dict: {'ok', 'score', 'cls', 'label'}
     """
-    (ox, oy) = tile_offset_xy
-    padded, (pt, pb, pl, pr) = _pad_image(tile_bgr, pad)
+    ox, oy = tile_offset_xy
+    padded, _ = _pad_image(tile_bgr, pad)
+    results = _run_yolo_classify(model_center, padded, imgsz=yolo_imgsz)
 
-    results = _run_yolo_pose(model_center, padded, conf=conf, iou=iou, imgsz=yolo_imgsz, max_det=2)
-    if not results or len(results) == 0 or getattr(results[0], "boxes", None) is None:
-        # In debug, still draw OK if requested
-        ok_debug = True if debug_mode else False
-        return {"ok": ok_debug, "height": None, "box_xyxy": None, "score": None, "cls": None}
+    predicted_class = None
+    confidence = None
+    if results and len(results) > 0 and getattr(results[0], "probs", None) is not None:
+        probs = results[0].probs
+        try:
+            predicted_class = int(probs.top1)
+        except Exception:
+            try:
+                predicted_class = int(np.asarray(probs.data).argmax())
+            except Exception:
+                predicted_class = None
 
-    r0 = results[0]
-    try:
-        boxes = r0.boxes.xyxy.cpu().numpy()
-        scores = r0.boxes.conf.cpu().numpy()
-        classes = r0.boxes.cls.cpu().numpy().astype(int)
-    except Exception:
-        boxes = np.asarray(r0.boxes.xyxy)
-        scores = np.asarray(r0.boxes.conf)
-        classes = np.asarray(r0.boxes.cls).astype(int)
+        try:
+            confidence = float(probs.top1conf)
+        except Exception:
+            try:
+                confidence = float(np.asarray(probs.data)[predicted_class]) if predicted_class is not None else None
+            except Exception:
+                confidence = None
 
-    # If nothing at all
-    if boxes is None or len(boxes) == 0:
-        ok_debug = True if debug_mode else False
-        return {"ok": ok_debug, "height": None, "box_xyxy": None, "score": None, "cls": None}
-
-    idxs = np.where(classes == int(class_id))[0]
-    if idxs.size == 0:
-        ok_debug = True if debug_mode else False
-        return {"ok": ok_debug, "height": None, "box_xyxy": None, "score": None, "cls": None}
-
-    best_local = int(idxs[np.argmax(scores[idxs])])
-    box_pad = boxes[best_local].astype(float)  # [x1, y1, x2, y2] in padded-tile coords
-    score   = float(scores[best_local])
-    cls     = int(classes[best_local])
-
-    # unpad to pre-pad *tile* coords
-    H, W = tile_bgr.shape[:2]
-    x1 = max(0.0, min(float(box_pad[0]) - pl, float(W)))
-    y1 = max(0.0, min(float(box_pad[1]) - pt, float(H)))
-    x2 = max(0.0, min(float(box_pad[2]) - pl, float(W)))
-    y2 = max(0.0, min(float(box_pad[3]) - pt, float(H)))
-
-    # map to GLOBAL coords
-    gx1, gy1 = x1 + ox, y1 + oy
-    gx2, gy2 = x2 + ox, y2 + oy
-
-    height = max(0.0, float(gy2 - gy1))
-    low, high = float(height_range[0]), float(height_range[1])
-    ok = (low <= height <= high)
-
-    # DEBUG override
+    ok = predicted_class == int(ok_class)
     if debug_mode:
         ok = True
+
+    h, w = tile_bgr.shape[:2]
+    gx1, gy1 = ox, oy
+    gx2, gy2 = ox + w, oy + h
+    label = _center_class_label(predicted_class)
 
     if draw and annotated_bgr is not None:
         color = (0, 255, 0) if ok else (0, 0, 255)
         cv2.rectangle(annotated_bgr, (int(round(gx1)), int(round(gy1))),
                                       (int(round(gx2)), int(round(gy2))),
                                       color, 1, lineType=cv2.LINE_AA)
-        label = f"({'OK' if ok else 'NG'})"
         cv2.putText(annotated_bgr, label,
-                    (int(round(gx1)) + 6, max(5, int(round(gy1)) - 6)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1, cv2.LINE_AA)
+                    (int(round(gx1)) + 6, max(18, int(round(gy1)) + 20)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1, cv2.LINE_AA)
 
     return {
         "ok": bool(ok),
-        "height": float(height),
-        "box_xyxy": (gx1, gy1, gx2, gy2),
-        "score": score,
-        "cls": cls
+        "score": confidence,
+        "cls": predicted_class,
+        "label": label,
     }
 
 
@@ -479,19 +466,15 @@ def _scan_center_strip(annotated_bgr: np.ndarray,
                        tile_w: int,
                        overlap_pct: float,
                        *,
-                       conf: float,
-                       iou: float,
-                       class_id: int,
-                       height_range: Tuple[float,float],
+                                             ok_class: int,
                        pad: Tuple[int,int,int,int]=(0,0,0,0),
                        draw_ok_green: bool = True,
                        debug_mode: bool = DEBUG_MODE,
                        yolo_imgsz: int = 384
                        ) -> List[Dict[str, Any]]:
     """
-    Slides across middle strip; each window:
-      - pad -> detect -> renorm -> evaluate bbox height
-    Returns list per window: {'roi_xywh', 'ok', 'height', 'box_xyxy', 'score', 'cls'}
+        Slides across middle strip; each window is classified independently.
+        Returns list per window: {'roi_xywh', 'ok', 'score', 'cls', 'label'}
     """
     strip, (sx, sy, sw, sh) = _center_strip_after_lr(proc, left_w=left_w, right_w=right_w)
     results: List[Dict[str, Any]] = []
@@ -505,14 +488,11 @@ def _scan_center_strip(annotated_bgr: np.ndarray,
         gy = sy + global_offset[1]
         roi = (gx, gy, w, sh)
 
-        r = _evaluate_center_tile_boxes(
+        r = _evaluate_center_tile_classification(
             model_center,
             tile_bgr=tile,
             tile_offset_xy=(gx, gy),
-            conf=conf,
-            iou=iou,
-            class_id=class_id,
-            height_range=height_range,
+            ok_class=ok_class,
             pad=pad,
             annotated_bgr=annotated_bgr,
             draw=True,
@@ -535,7 +515,7 @@ def _scan_center_strip(annotated_bgr: np.ndarray,
 # 7) Unified entry point
 # =========================
 
-def J30_Check(img_bgr: np.ndarray,
+def JXX_Check(img_bgr: np.ndarray,
               model_left: Any,
               model_right: Any,
               model_center: Any = None,                 # optional; needed if enable_center=True
@@ -554,18 +534,17 @@ def J30_Check(img_bgr: np.ndarray,
               yolo_conf: float = YOLO_CONF,
               yolo_iou: float = YOLO_IOU,
               yolo_imgsz_side: int = 384,
-              yolo_imgsz_center: int = 384,
+              yolo_imgsz_center: int = 256,
               # --- L/R evaluation ---
               dx_range_left: Tuple[float, float] = DX_RANGE_LEFT,
               dx_range_right: Tuple[float, float] = DX_RANGE_RIGHT,
               left_pad: Tuple[int,int,int,int] = LEFT_PAD,      # (top,bottom,left,right)
               right_pad: Tuple[int,int,int,int] = RIGHT_PAD,
-              # --- center scanning (object detection) ---
+              # --- center scanning (classification) ---
               enable_center: bool = False,
               center_tile_width: int = CENTER_TILE_WIDTH,
               center_overlap_pct: float = CENTER_OVERLAP_PCT,
-              center_class_id: int = CENTER_CLASS_ID,
-              center_bbox_height_range: Tuple[float,float] = CENTER_BBOX_HEIGHT_RANGE,
+              center_ok_class: int = CENTER_OK_CLASS,
               center_pad: Tuple[int,int,int,int] = CENTER_PAD,
               center_draw_ok_green: bool = True,
               # --- debug override (optional) ---
@@ -576,7 +555,7 @@ def J30_Check(img_bgr: np.ndarray,
       - Vertical crop (top/bottom exclusive) + side trim → global offset
       - Left/Right tiles with *keypoint* YOLO + per-side padding (coords unpadded & mapped to global)
       - L/R evaluation via signed Δx between best cls0 & cls1 keypoint-mean positions
-      - Optional Center scanning (object detection with padding) using bbox-height check
+    - Optional center scanning using classification windows where every tile must predict the configured OK class
 
     DEBUG:
       - If DEBUG_MODE or debug_mode=True, all OK results are forced to True and overall_ok=True.
@@ -644,7 +623,7 @@ def J30_Check(img_bgr: np.ndarray,
         for (x, y, w, h), col in [(left_det.roi_xywh, (0, 255, 0)), (right_det.roi_xywh, (255, 0, 0))]:
             cv2.rectangle(annotated, (x, y), (x + w, y + h), col, 1, lineType=cv2.LINE_AA)
 
-    result = J30Result(annotated_bgr=annotated, left=left_det, right=right_det)
+    result = JXXResult(annotated_bgr=annotated, left=left_det, right=right_det)
 
     # 5) L/R evaluate (respect debug)
     eval_lr = evaluate_sides_and_annotate(
@@ -669,10 +648,7 @@ def J30_Check(img_bgr: np.ndarray,
             right_w=right_width,
             tile_w=center_tile_width,
             overlap_pct=center_overlap_pct,
-            conf=yolo_conf,
-            iou=yolo_iou,
-            class_id=center_class_id,
-            height_range=center_bbox_height_range,
+            ok_class=center_ok_class,
             pad=center_pad,
             draw_ok_green=center_draw_ok_green,
             debug_mode=dbg,

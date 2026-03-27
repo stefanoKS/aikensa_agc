@@ -43,9 +43,9 @@ class AIKensa(QMainWindow):
         self.modbusThread = ModbusServerThread(host=server_ip_address, port=server_port)
         self.inspection_thread = InspectionThread(InspectionConfig(),  modbus_thread=self.modbusThread)  
 
-        self.modbusThread.holdingUpdated.connect(self.inspection_thread.on_holding_update)
         self.inspection_thread.SerialNumber_signal.connect(self._update_serial_number)
         self.inspection_thread.LotNumber_signal.connect(self._update_lot_number)
+        self.modbusThread.plcConnectionStatusChanged.connect(self._update_plc_status_label)
         self.modbusThread.start()
         self.inspection_thread.start()
 
@@ -60,13 +60,6 @@ class AIKensa(QMainWindow):
         self._setup_ui()
 
         self.initial_colors = {}#store initial colors of the labels
-
-        self.widget_dir_map = {
-            8: "J30LH",
-            9: "J30RH",
-            10: "J59JLH",
-            11: "J59JRH",
-        }
 
         self.prevTriggerStates = 0
         self.TriggerWaitTime = 2.0
@@ -303,32 +296,34 @@ class AIKensa(QMainWindow):
             label5 = widget.findChild(QLabel, "FramePart5")
             label5.setPixmap(QPixmap.fromImage(image))
 
+    def _get_agc_widget(self):
+        if not hasattr(self, "stackedWidget"):
+            return None
+        if self.stackedWidget.count() <= 5:
+            return None
+        return self.stackedWidget.widget(5)
+
     def _update_OKNG_label(self, numofPart):
-            ok, ng = numofPart[0], numofPart[1]
-            widget = self.stackedWidget.widget(5)  # Only use widget 5
-            if widget:
-                current_kansei_label = widget.findChild(QLabel, "current_kansei")
-                current_furyou_label = widget.findChild(QLabel, "current_furyou")
-                if current_kansei_label:
-                    current_kansei_label.setText(str(ok))
-                if current_furyou_label:
-                    current_furyou_label.setText(str(ng))
+        ok, ng = numofPart[0], numofPart[1]
+        widget = self._get_agc_widget()
+        if widget:
+            current_kansei_label = widget.findChild(QLabel, "current_kansei")
+            current_furyou_label = widget.findChild(QLabel, "current_furyou")
+            if current_kansei_label:
+                current_kansei_label.setText(str(ok))
+            if current_furyou_label:
+                current_furyou_label.setText(str(ng))
 
     def _update_todayOKNG_label(self, numofPart):
-        for widget_key, part_name in self.widget_dir_map.items():
-            # Get OK and NG values using widget_key as index
-            if 0 <= widget_key < len(numofPart):
-                ok, ng = numofPart[widget_key]
-                widget = self.stackedWidget.widget(widget_key)
-                if widget:
-                    current_kansei_label = widget.findChild(QLabel, "status_kansei")
-                    current_furyou_label = widget.findChild(QLabel, "status_furyou")
-                    if current_kansei_label:
-                        current_kansei_label.setText(str(ok))
-                    if current_furyou_label:
-                        current_furyou_label.setText(str(ng))
-            else:
-                print(f"Widget key {widget_key} is out of bounds for todaynumofPart")
+        ok, ng = numofPart[0], numofPart[1]
+        widget = self._get_agc_widget()
+        if widget:
+            current_kansei_label = widget.findChild(QLabel, "status_kansei")
+            current_furyou_label = widget.findChild(QLabel, "status_furyou")
+            if current_kansei_label:
+                current_kansei_label.setText(str(ok))
+            if current_furyou_label:
+                current_furyou_label.setText(str(ng))
 
     def _inspectionStatusText(self, inspectionStatus):
         label_names = ["StatusP1", "StatusP2", "StatusP3", "StatusP4", "StatusP5"]
@@ -448,16 +443,36 @@ class AIKensa(QMainWindow):
             )
 
     def _update_serial_number(self, serial_number):
-        widget = self.stackedWidget.widget(5)
+        widget = self._get_agc_widget()
+        if not widget:
+            return
         serial_label = widget.findChild(QLabel, "status_SERIALNO")
         if serial_label:
             serial_label.setText(f"{serial_number}")
 
     def _update_lot_number(self, lot_number):
-        widget = self.stackedWidget.widget(5)
+        widget = self._get_agc_widget()
+        if not widget:
+            return
         lot_label = widget.findChild(QLabel, "status_LOTNO")
         if lot_label:
             lot_label.setText(f"{lot_number}")
+
+    def _update_plc_status_label(self, connected: bool):
+        widget = self._get_agc_widget()
+        if not widget:
+            return
+
+        label = widget.findChild(QLabel, "PLC_STATUS_label")
+        if not label:
+            return
+
+        if connected:
+            label.setText("CONNECTED")
+            label.setStyleSheet("color: rgb(46, 204, 113);")
+        else:
+            label.setText("NOT CONNECTED")
+            label.setStyleSheet("color: rgb(239, 41, 41);")
 
 
 

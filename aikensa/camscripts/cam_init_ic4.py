@@ -372,6 +372,7 @@ def initialize_camera_ic4(
     auto_exposure: bool = False,
     auto_gain: bool = False,
     auto_wb: bool = False,
+    first_frame_timeout_ms: int = 200,
     *,
     fallback_to_placeholder: bool = True,
     placeholder_path: str = "./aikensa/assets/no_camera.png",
@@ -394,7 +395,7 @@ def initialize_camera_ic4(
         _try_set(pm, (PID_WB_AUTO,), auto_wb)
 
         # Gate: try a first frame so you immediately know it's usable
-        ok, frame = cam.read(timeout_ms=1000)
+        ok, frame = cam.read(timeout_ms=first_frame_timeout_ms)
         if not ok or frame is None:
             raise RuntimeError("Camera opened but first frame grab failed.")
 

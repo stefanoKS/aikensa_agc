@@ -16,6 +16,17 @@ _logger = logging.getLogger(__name__)
 _logger.setLevel(logging.INFO)
 
 
+class ObservableDataBlock(ModbusSequentialDataBlock):
+    def __init__(self, address, values, on_write=None):
+        super().__init__(address, values)
+        self._on_write = on_write
+
+    def setValues(self, address, values):
+        super().setValues(address, values)
+        if self._on_write is not None:
+            self._on_write(address, values)
+
+
 class ModbusServerThread(QThread):
     """
     Run a TCP‐only asyncio Modbus server inside a QThread.
@@ -23,18 +34,22 @@ class ModbusServerThread(QThread):
     - port: the TCP port (default 502)
     """
     holdingUpdated = pyqtSignal(dict)
+    plcConnectionStatusChanged = pyqtSignal(bool)
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 502, parent=None):
+    def __init__(self, host: str = "0.0.0.0", port: int = 502, poll_interval: float = 0.05, parent=None):
         super().__init__(parent)
         self.host = host
         self.port = port
         self.loop = None
         self.context = None
+        self._holding_register_block = None
+        self._last_emitted_values = None
+        self._plc_connected = False
         
         # You can change these to control which registers get polled:
         self._poll_start = 0    # starting address of HR to poll
         self._poll_count = 200   # how many registers to read each time
-        self._poll_interval = 0.5  # seconds between polls
+        self._poll_interval = poll_interval  # seconds between polls
 
     def setup_context(self):
         """
@@ -46,10 +61,16 @@ class ModbusServerThread(QThread):
         You can tweak the size and initial values as needed.
         """
         size = 1000
+        self._holding_register_block = ObservableDataBlock(
+            0,
+            [0] * size,
+            on_write=self._handle_holding_register_write,
+        )
+
         store = ModbusSlaveContext(
             di=ModbusSequentialDataBlock(0, [0] * size),
             co=ModbusSequentialDataBlock(0, [0] * size),
-            hr=ModbusSequentialDataBlock(0, [0] * size),
+            hr=self._holding_register_block,
             ir=ModbusSequentialDataBlock(0, [0] * size),
         )
 
@@ -76,40 +97,43 @@ class ModbusServerThread(QThread):
         It sleeps `self._poll_interval` seconds, then reads HR[start : start+count].
         If those values differ from the last read, it emits `holdingUpdated`.
         """
-        prev_values = None
         while True:
+            self._emit_holding_update_if_changed()
             await asyncio.sleep(self._poll_interval)
 
-            # Make sure context is ready
-            if self.context is None:
-                continue
+    def _handle_holding_register_write(self, address, values):
+        self._emit_holding_update_if_changed()
 
-            # Read holding registers via function code 3
-            try:
-                raw = self.context[0].getValues(
-                    3,                     # 3 = holding register
-                    self._poll_start,      # starting address
-                    self._poll_count       # number of registers
-                )
-            except Exception as e:
-                _logger.error(f"Error reading holding registers: {e}")
-                continue
+    def _emit_holding_update_if_changed(self):
+        if self.context is None:
+            return
 
-            # Build a simple dict: {address: value}
-            new_values = {
-                self._poll_start + i: raw[i]
-                for i in range(len(raw))
-            }
+        try:
+            raw = self.context[0].getValues(
+                3,
+                self._poll_start,
+                self._poll_count,
+            )
+        except Exception as err:
+            _logger.error(f"Error reading holding registers: {err}")
+            return
 
-            # Emit only if changed
-            if new_values != prev_values:
-                prev_values = new_values
-                # Emit the dict to any connected slots
-                self.holdingUpdated.emit(new_values)
-                print("New values are emitted")
+        new_values = {
+            self._poll_start + i: raw[i]
+            for i in range(len(raw))
+        }
 
-            # Print all values for debugging
-            # _logger.debug(f"Polled HR[{self._poll_start}..{self._poll_start + self._poll_count - 1}] = {raw}")
+        if new_values != self._last_emitted_values:
+            self._last_emitted_values = new_values
+            self.holdingUpdated.emit(dict(new_values))
+
+    def _handle_trace_connect(self, connected: bool) -> None:
+        connected = bool(connected)
+        if connected == self._plc_connected:
+            return
+
+        self._plc_connected = connected
+        self.plcConnectionStatusChanged.emit(connected)
 
     def write_holding_registers(self, start_addr: int, values: list[int]):
         """
@@ -122,6 +146,7 @@ class ModbusServerThread(QThread):
             try:
                 # 3 = function code for holding registers
                 self.context[0].setValues(3, start_addr, values)
+                self._emit_holding_update_if_changed()
                 # _logger.info(f"Wrote HR[{start_addr}..{start_addr + len(values)-1}] = {values}")
             except Exception as err:
                 _logger.error(f"Failed to write HR[{start_addr}..]: {err}")
@@ -152,6 +177,7 @@ class ModbusServerThread(QThread):
             context=self.context,
             identity=identity,
             address=(self.host, self.port),
+            trace_connect=self._handle_trace_connect,
         )
         self.loop.create_task(server_coro)
 
@@ -165,5 +191,6 @@ class ModbusServerThread(QThread):
         """
         Call this from the GUI thread to stop the server cleanly.
         """
+        self._handle_trace_connect(False)
         if self.loop and self.loop.is_running():
             self.loop.call_soon_threadsafe(self.loop.stop)

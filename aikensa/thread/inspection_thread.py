@@ -29,13 +29,13 @@ from PIL import ImageFont, ImageDraw, Image
 from aikensa.scripts.scripts import list_to_16bit_int, load_register_map, invert_16bit_int, random_list
 from aikensa.scripts.scripts_img_processing import crop_parts, aruco_detect, aruco_detect_yolo
 
-from aikensa.parts_config.AGC.J59J.J59J_SET import J59J_Set_Check as J59J_Set_Check
-from aikensa.parts_config.AGC.J59J.J59J_KENSA import J59J_Tape_Check as J59J_Tape_Check
-
-from aikensa.parts_config.AGC.JXX_SETKENSA import JXX_Check as JXX_Check
+from aikensa.parts_config.AGC.JXX_KENSA import JXX_Check as JXX_Check
 
 from typing import Iterable, Any, Optional, Dict, Tuple, List, Callable
 import re
+
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class InspectionConfig:
@@ -109,6 +109,9 @@ class InspectionThread(QThread):
         if self.modbus_thread is not None:
             self.modbus_thread.holdingUpdated.connect(self.on_holding_update)
             self.requestModbusWrite.connect(self.modbus_thread.write_holding_registers)
+
+        self.models_initialized = False
+        self.camera_read_timeout_ms = 100
 
 
         self.kanjiFontPath = "aikensa/font/NotoSansJP-ExtraBold.ttf"
@@ -299,6 +302,19 @@ class InspectionThread(QThread):
 
         self.currentLot_NOP = [0]*2 #current lot number num of parts [OK, NG]
         self.prevLot_NOP = [0]*2
+        self.todayPart_NOP = [0]*2
+        self.current_counter_offsets = {
+            widget: [0, 0] for widget in self.widget_dir_map
+        }
+        self.today_counter_offsets = {
+            widget: [0, 0] for widget in self.widget_dir_map
+        }
+        self.current_counter_offset_lot = {
+            widget: None for widget in self.widget_dir_map
+        }
+        self.today_counter_offset_day = datetime.now().strftime("%Y%m%d")
+        self.last_emitted_serial_number = None
+        self.last_emitted_lot_number = None
 
         self.temp_prev_OK = 0
         self.temp_prev_NG = 0
@@ -312,6 +328,9 @@ class InspectionThread(QThread):
             self.mysqlHostPort = credentials["port"]
 
         self.holding_register_path = "./aikensa/modbus/holding_register_map.yaml"
+        self.widget_inspection_config_path = "./aikensa/parts_config/AGC/widget_inspection_config.yaml"
+        self.widget_inspection_configs = self.load_widget_inspection_config(self.widget_inspection_config_path)
+        self.command_pause_ms = 150
         self.holding_register_map = load_register_map(self.holding_register_path)
         self.camera_angle = 180.65
         self.last_valid_part_number = 0
@@ -359,14 +378,13 @@ class InspectionThread(QThread):
         self.current_LotNumber = f"{self.lotASCIICode_chars}{self.lotNumber_back:05d}{self.lotNumber_front:05d}"
         self.current_SerialNumber = f"{self.serialNumber_back:05d}{self.serialNumber_front:05d}"
 
-        #DEBUG
-        print(f"lotASCIIcode: {self.lotASCIICode_1}, {self.lotASCIICode_2}, {self.lotASCIICode_3}, {self.lotASCIICode_4}, {self.lotASCIICode_5}, {self.lotASCIICode_6}, {self.lotASCIICode_7}, {self.lotASCIICode_8}")
-        print(f"Lot Number Front:  {self.lotNumber_front}")
-        print(f"Lot Number Back:   {self.lotNumber_back}")
-        print(f"Part Number: {self.partNumber}")
-        print(f"Serial Number Front: {self.serialNumber_front}")
-        print(f"Serial Number Back:  {self.serialNumber_back}")
-        print(f"Instruction Code:     {self.InstructionCode}")
+        if self.current_LotNumber != self.last_emitted_lot_number:
+            self.last_emitted_lot_number = self.current_LotNumber
+            self.LotNumber_signal.emit(self.current_LotNumber)
+
+        if self.current_SerialNumber != self.last_emitted_serial_number:
+            self.last_emitted_serial_number = self.current_SerialNumber
+            self.SerialNumber_signal.emit(self.current_SerialNumber)
 
 
     def initialize_single_camera(self, camID):
@@ -375,7 +393,8 @@ class InspectionThread(QThread):
             width=3072, height=2048, fps=25,
             color=True,
             exposure_us=15000, gain_db=10, wb_temperature=6500,
-            auto_exposure=False, auto_gain=False, auto_wb=False)
+            auto_exposure=False, auto_gain=False, auto_wb=False,
+            first_frame_timeout_ms=200)
 
         if not self.cap_cam_ic4.isOpened():
             print("Failed to open IC4 camera ")
@@ -439,8 +458,6 @@ class InspectionThread(QThread):
 
 
         print("Inspection Thread Started")
-        self.initialize_model()
-        print("AI Model Initialized")
 
         self.current_cameraID = self.inspection_config.cameraID
         self.initialize_single_camera(0)
@@ -475,1866 +492,21 @@ class InspectionThread(QThread):
                 if self.inspection_config.manual_part_selection == 4:
                     self.partNumber = 1
 
+            if self._inspection_command_pending():
+                self.ensure_models_initialized()
+
 
             if self.inspection_config.widget in [0, 5, 6, 7, 8]:
-                ok, self.camFrame_ic4 = self.cap_cam_ic4.read(timeout_ms=1000)
+                ok, self.camFrame_ic4 = self.cap_cam_ic4.read(timeout_ms=self.camera_read_timeout_ms)
                 if self.camFrame_ic4 is None:
                     continue
                 # self.camFrame_ic4 = cv2.rotate(self.camFrame_ic4, cv2.ROTATE_180)
                 #invert rgb to bgr
                 self.camFrame_ic4 = cv2.cvtColor(self.camFrame_ic4, cv2.COLOR_BGR2RGB)
-
-            #J30 LH Inspection
-            if self.inspection_config.widget == 8:
-                self.handle_adjustments_and_counterreset()
-                self.part1Crop = self.crop_part(self.camFrame_ic4, "J30LH_part1_Crop", out_w=1771, out_h=121)
-                self.part2Crop = self.crop_part(self.camFrame_ic4, "J30LH_part2_Crop", out_w=1771, out_h=121)
-                self.part3Crop = self.crop_part(self.camFrame_ic4, "J30LH_part3_Crop", out_w=1771, out_h=121)
-                self.part4Crop = self.crop_part(self.camFrame_ic4, "J30LH_part4_Crop", out_w=1771, out_h=121)
-                self.part5Crop = self.crop_part(self.camFrame_ic4, "J30LH_part5_Crop", out_w=1771, out_h=121)
-
-                self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-
-                if self.firstTimeInspection is False:
-                    if self.inspection_config.doInspection is False:
-                        self.InspectionTimeStart = time.time()
-                        self.firstTimeInspection = True
-                        self.inspection_config.doInspection = True
-                
-                self.partNumber_signal.emit(self.partNumber)
-
-                if self.InstructionCode != 0:
-                    self.InspectionImages[0] = self.part1Crop
-                    self.InspectionImages[1] = self.part2Crop
-                    self.InspectionImages[2] = self.part3Crop
-                    self.InspectionImages[3] = self.part4Crop
-                    self.InspectionImages[4] = self.part5Crop
-
-                if self.InstructionCode == 0:
-                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                    if self.InstructionCode_prev == 0:
-                        # print("Already processed Set Inspection command, skipping...")
-                        pass  # Skip, already processed
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self._reset_inspection_results()
-                        self._emit_zero_registers()
-                        time.sleep(0.5)
-
-                # 1 = Set Inspection
-                if self.InstructionCode == 1 or self.inspection_config.doInspection is True:
-                    if self.InstructionCode_prev == 1:
-                        # print("Already processed Set Inspection command, skipping...")
-                        pass
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doInspection = False
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
-
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        if self.Tray_detection_left_result == 0 and self.Tray_detection_right_result == 1:
-                            print ("Tray detected as J30LH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray.ForcedOK")
-                            self.InspectionResult_Tray_NG = 0
-
-                        # check whether set part is set correctly
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-
-                        for i, crop in enumerate(parts):
-
-                            self.SetExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.SetCorrectInspectionImages[i] = crop
-
-                            SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
-                            self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
-
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = JXX_Check(
-                                                                                                            self.SetCorrectInspectionImages[i],
-                                                                                                            model_left=self.AGCJ30LH_SET_LEFT_model,
-                                                                                                            model_right=self.AGCJ30LH_SET_RIGHT_model,
-                                                                                                            enable_center=False,                 # <- default already
-                                                                                                            crop_from_bottom=True,               # or crop_from_top=True
-                                                                                                            crop_height=128,
-                                                                                                            trim_left=0, trim_right=0,
-                                                                                                            left_width=256, right_width=256,
-                                                                                                            dx_range_left=(8, 17),
-                                                                                                            dx_range_right=(3, 12),
-                                                                                                            left_pad=(0, 0, 0, 0),
-                                                                                                            right_pad=(0, 0, 0, 0),
-                                                                                                            debug_mode = self.debug,
-                                                                                                            yolo_imgsz_side = 384,
-                                                                                                            yolo_imgsz_center = 256,
-                                                                                                        )
-                            
-
-                        
-                            
-                            
-                            
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.SetCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        #wait t=1 sec
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        self.InspectionResult_SetID_OK = np.flip(self.InspectionResult_SetID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_SetID_OK = [int(x) for x in self.InspectionResult_SetID_OK]
-                        self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_SetID_OK[i] = 0
-                                self.InspectionResult_SetID_NG[i] = 0
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
-                        self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
-
-                        #Emit the inspection result and serial number to holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"],[self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
-                        print("Inspection Result Set ID Emitted")
-                        time.sleep(0.5)
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected set images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/set"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.SetCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        
-                # 2 = Tape Inspection
-                if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
-
-                    if self.InstructionCode_prev == 2:
-                        pass
-                        print("Already processed Tape Inspection command, skipping..."  )
-                    else:
-
-                    # if self.InstructionCode == 2:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doTapeInspection = False
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
-
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        if self.Tray_detection_left_result == 0 and self.Tray_detection_right_result == 1:
-                            print ("Tray detected as J30LH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray. ForcedOK")
-                            self.InspectionResult_Tray_NG = 0
-
-                        if self.lotASCIICode_1 == 22089 and self.lotASCIICode_2 == 52:
-                            print("IV4 detected, skipping Tape Inspection...")
-                            self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.IV4_KensaResults_OK])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.IV4_KensaResults_NG])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                            print("Inspection Result Tape ID Emitted")
-                            time.sleep(0.5)
-                            continue
-
-                        # ---- DB-backed baseline NOP (survives reboot + supports overwrite of same lot+serial) ----
-                        # This returns lot totals EXCLUDING existing row for this (lot,serial) if it exists.
-                        self.prevLot_NOP = getattr(self, "currentLot_NOP", [0, 0]).copy()
-                        self.currentLot_NOP = self.get_last_entry_currentnumofPart(
-                            partName=int(self.inspection_config.widget),
-                            lotNumber=str(self.current_LotNumber),
-                            serialNumber=str(self.current_SerialNumber),
-                        )
-
-                        # check whether set part is set correctly
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-                        
-                        N_PARTS = 5
-                        # ensure these are indexable
-                        self.TapeExistInspectionImages        = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
-                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
-                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
-
-                        for i, crop in enumerate(parts):
-
-                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.TapeCorrectInspectionImages[i] = crop
-                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
-                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
-                                                                                                                            self.TapeCorrectInspectionImages[i], model_left=self.AGCJ30LH_TAPE_LEFT_model, model_right=self.AGCJ30LH_TAPE_RIGHT_model, model_center=self.AGCJ30LH_TAPE_CENTER_model,
-                                                                                                                            enable_center=True,
-                                                                                                                            crop_from_top=False,
-                                                                                                                            crop_from_bottom=True,
-                                                                                                                            crop_height=128,
-                                                                                                                            trim_left=0, trim_right=0,
-                                                                                                                            left_width=256, right_width=256,
-                                                                                                                            dx_range_left=(2, 30), dx_range_right=(-25, -2),
-                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
-                                                                                                                            center_class_id=0,                          # your target class
-                                                                                                                            center_bbox_height_range=(1.0, 15.0),      # OK range in px
-                                                                                                                            center_pad=(0, 0, 0, 0), 
-                                                                                                                            debug_mode = self.debug,
-                                                                                                                            yolo_imgsz_side = 384,
-                                                                                                                            yolo_imgsz_center = 256,
-                                                                                                                        )
-
-
-
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.TapeCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        #wait t=1 sec
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        print (self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
-                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_TapeID_OK[i] = 0
-                                self.InspectionResult_TapeID_NG[i] = 0
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
-
-                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
-
-                        # ---- Update DB with this inspection contribution (delete+replace if same lot+serial) ----
-                        ok_add = int(sum(self.InspectionResult_TapeID_OK))
-                        ng_add = int(sum(self.InspectionResult_TapeID_NG))
-
-                        # Save row (handles overwrite by deleting same (part,lot,serial) then inserting new)
-                        # currentLOTNOP is optional here; it is NOT required for totals
-                        self.save_result_database(
-                            partName=int(self.inspection_config.widget),
-                            lotNumber=str(self.current_LotNumber),
-                            serialNumber=str(self.current_SerialNumber),
-                            currentLOTNOP=self.currentLot_NOP,
-                            timestampDate=None,
-                            kensainName=str(getattr(self, "kensainName", "")),
-                            ok_add=ok_add,
-                            ng_add=ng_add,
-                        )
-
-                        # Refresh current lot totals from DB (authoritative)
-                        self.cursor.execute("""
-                            SELECT COALESCE(SUM(ok_add), 0), COALESCE(SUM(ng_add), 0)
-                            FROM inspection_results
-                            WHERE partName=? AND lotNumber=?
-                        """, (int(self.inspection_config.widget), str(self.current_LotNumber)))
-                        ok_total, ng_total = self.cursor.fetchone()
-                        self.currentLot_NOP = [int(ok_total), int(ng_total)]
-
-                        #Emit the inspection result and serial number to holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                        print("Inspection Result Tape ID Emitted")
-
-
-
-                        self.SerialNumber_signal.emit(self.current_SerialNumber)
-                        self.LotNumber_signal.emit(self.current_LotNumber)
-
-                        self.prev_LotNumber = self.current_LotNumber
-                        self.prev_SerialNumber = self.current_SerialNumber
-                        self.temp_prev_NG = ng_add
-                        self.temp_prev_OK = ok_add
-                        time.sleep(0.5)
-
-
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected tape images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/tape"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.TapeCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        
-                if self.InstructionCode == 3:
-
-                    if self.InstructionCode_prev == 3:
-                        pass
-                        print("Already processed Tape Inspection command, skipping..."  )
-
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doTapeInspection = False
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
-
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        if self.Tray_detection_left_result == 0 and self.Tray_detection_right_result == 1:
-                            print ("Tray detected as J30LH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray. ForcedOK")
-                            self.InspectionResult_Tray_NG = 1
-
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-
-                        N_PARTS = 5
-                        # ensure these are indexable
-                        self.TapeExistInspectionImages        = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
-                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
-                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
-
-                        for i, crop in enumerate(parts):
-
-                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.TapeCorrectInspectionImages[i] = crop
-                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
-                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
-                                                                                                                            self.TapeCorrectInspectionImages[i], model_left=self.AGCJ30LH_TAPE_LEFT_model, model_right=self.AGCJ30LH_TAPE_RIGHT_model, model_center=self.AGCJ30LH_TAPE_CENTER_model,
-                                                                                                                            enable_center=True,
-                                                                                                                            crop_from_top=False,
-                                                                                                                            crop_from_bottom=True,
-                                                                                                                            crop_height=128,
-                                                                                                                            trim_left=0, trim_right=0,
-                                                                                                                            left_width=256, right_width=256,
-                                                                                                                            dx_range_left=(2, 30), dx_range_right=(-25, -2),
-                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
-                                                                                                                            center_class_id=0,                          # your target class
-                                                                                                                            center_bbox_height_range=(1.0, 15.0),      # OK range in px
-                                                                                                                            center_pad=(0, 0, 0, 0), 
-                                                                                                                            debug_mode = self.debug,
-                                                                                                                            yolo_imgsz_side = 384,
-                                                                                                                            yolo_imgsz_center = 256,
-                                                                                                                        )
-
-
-
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.TapeCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
-                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_TapeID_OK[i] = 0
-                                self.InspectionResult_TapeID_NG[i] = 0
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
-
-                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
-
-                        #Emit the inspection result and serial number to holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                        print("Inspection Result Tape ID Emitted")
-
-                        self.SerialNumber_signal.emit(self.current_SerialNumber)
-                        self.LotNumber_signal.emit(self.current_LotNumber)
-
-                        time.sleep(0.5)
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected tape images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/tape"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.TapeCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-       
-
-                #emit the ethernet 
-                self.current_numofPart_signal.emit(self.currentLot_NOP)
-            
-                self.AGC_InspectionStatus.emit(self.InspectionStatus)
-            #J30 RH Inspection
-            if self.inspection_config.widget == 7:
-                self.handle_adjustments_and_counterreset()
-                self.part1Crop = self.crop_part(self.camFrame_ic4, "J30RH_part1_Crop", out_w=1771, out_h=121)
-                self.part2Crop = self.crop_part(self.camFrame_ic4, "J30RH_part2_Crop", out_w=1771, out_h=121)
-                self.part3Crop = self.crop_part(self.camFrame_ic4, "J30RH_part3_Crop", out_w=1771, out_h=121)
-                self.part4Crop = self.crop_part(self.camFrame_ic4, "J30RH_part4_Crop", out_w=1771, out_h=121)
-                self.part5Crop = self.crop_part(self.camFrame_ic4, "J30RH_part5_Crop", out_w=1771, out_h=121)
-
-                self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-
-                if self.firstTimeInspection is False:
-                    if self.inspection_config.doInspection is False:
-                        self.InspectionTimeStart = time.time()
-                        self.firstTimeInspection = True
-                        self.inspection_config.doInspection = True
-                
-                self.partNumber_signal.emit(self.partNumber)
-
-                if self.InstructionCode != 0:
-                    self.InspectionImages[0] = self.part1Crop
-                    self.InspectionImages[1] = self.part2Crop
-                    self.InspectionImages[2] = self.part3Crop
-                    self.InspectionImages[3] = self.part4Crop
-                    self.InspectionImages[4] = self.part5Crop
-
-
-                if self.InstructionCode == 0:
-                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                    if self.InstructionCode_prev == 0:
-                        # print("Already processed Set Inspection command, skipping...")
-                        pass  # Skip, already processed
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self._reset_inspection_results()
-                        self._emit_zero_registers()
-                        time.sleep(0.5)
-
-                # 1 = Set Inspection
-                if self.InstructionCode == 1 or self.inspection_config.doInspection is True:
-                    if self.InstructionCode_prev == 1:
-                        # print("Already processed Set Inspection command, skipping...")
-                        pass
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doInspection = False
-
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_down_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_down_crop", out_w=512, out_h=512)
-
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        if self.Tray_detection_left_result == 2 and self.Tray_detection_right_result == 3:
-                            print ("Tray detected as J30LH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray.")
-                            self.InspectionResult_Tray_NG = 0
-
-                        # check whether set part is set correctly
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-
-                        for i, crop in enumerate(parts):
-
-                            self.SetExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.SetCorrectInspectionImages[i] = crop
-
-                            SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
-                            self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
-
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = JXX_Check(
-                                                                                                            self.SetCorrectInspectionImages[i],
-                                                                                                            model_left=self.AGCJ30RH_SET_LEFT_model,
-                                                                                                            model_right=self.AGCJ30RH_SET_RIGHT_model,
-                                                                                                            enable_center=False,                 # <- default already
-                                                                                                            crop_from_bottom=False,               
-                                                                                                            crop_from_top=True,
-                                                                                                            crop_height=128,
-                                                                                                            trim_left=0, trim_right=0,
-                                                                                                            left_width=256, right_width=256,
-                                                                                                            dx_range_left=(8, 17),
-                                                                                                            dx_range_right=(3, 12),
-                                                                                                            left_pad=(0, 0, 0, 0),
-                                                                                                            right_pad=(0, 0, 0, 0),
-                                                                                                            debug_mode = self.debug,
-                                                                                                            yolo_imgsz_side = 384,
-                                                                                                            yolo_imgsz_center = 256,
-                                                                                                        )
-                            
-                            
-                            
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.SetCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        #wait t=1 sec
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        self.InspectionResult_SetID_OK = np.flip(self.InspectionResult_SetID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_SetID_OK = [int(x) for x in self.InspectionResult_SetID_OK]
-                        self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_SetID_OK[i] = 0
-                                self.InspectionResult_SetID_NG[i] = 0
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
-                        self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
-
-                        #Emit the inspection result and serial number to holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"],[self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
-                        print("Inspection Result Set ID Emitted")
-                        time.sleep(0.5)
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected set images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/set"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.SetCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        
-                # 2 = Tape Inspection
-                if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
-                    if self.InstructionCode_prev == 2:
-                        pass
-                        print("Already processed Tape Inspection command, skipping..."  )
-                    else:
-                    # if self.InstructionCode == 2:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doTapeInspection = False
-
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_down_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_down_crop", out_w=512, out_h=512)
-                      
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        if self.Tray_detection_left_result == 2 and self.Tray_detection_right_result == 3:
-                            print ("Tray detected as J30LH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray.")
-                            self.InspectionResult_Tray_NG = 1
-
-                        if self.lotASCIICode_1 == 22089 and self.lotASCIICode_2 == 52:
-                            print("IV4 detected, skipping Tape Inspection...")
-                            self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.IV4_KensaResults_OK])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.IV4_KensaResults_NG])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                            print("Inspection Result Tape ID Emitted")
-                            time.sleep(0.5)
-                            continue
-
-                        # ---- DB-backed baseline NOP (survives reboot + supports overwrite of same lot+serial) ----
-                        # This returns lot totals EXCLUDING existing row for this (lot,serial) if it exists.
-                        self.prevLot_NOP = getattr(self, "currentLot_NOP", [0, 0]).copy()
-                        self.currentLot_NOP = self.get_last_entry_currentnumofPart(
-                            partName=int(self.inspection_config.widget),
-                            lotNumber=str(self.current_LotNumber),
-                            serialNumber=str(self.current_SerialNumber),
-                        )
-
-                        # check whether set part is set correctly
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-                        
-                        N_PARTS = 5
-                        # ensure these are indexable
-                        self.TapeExistInspectionImages        = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
-                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
-                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
-
-                        for i, crop in enumerate(parts):
-
-                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.TapeCorrectInspectionImages[i] = crop
-                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
-                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
-                                                                                                                            self.TapeCorrectInspectionImages[i], 
-                                                                                                                            model_left=self.AGCJ30RH_TAPE_LEFT_model, 
-                                                                                                                            model_right=self.AGCJ30RH_TAPE_RIGHT_model, 
-                                                                                                                            model_center=self.AGCJ30RH_TAPE_CENTER_model,
-                                                                                                                            enable_center=True,
-                                                                                                                            crop_from_top=True,
-                                                                                                                            crop_from_bottom=False,
-                                                                                                                            crop_height=128,
-                                                                                                                            trim_left=0, trim_right=0,
-                                                                                                                            left_width=256, right_width=256,
-                                                                                                                            dx_range_left=(2, 30), dx_range_right=(-25, 2),
-                                                                                                                            yolo_conf=0.3, yolo_iou=0.5,
-                                                                                                                            center_class_id=0,                          # your target class
-                                                                                                                            center_bbox_height_range=(1.0, 15.0),      # OK range in px
-                                                                                                                            center_pad=(0, 0, 0, 0), 
-                                                                                                                            debug_mode = self.debug,
-                                                                                                                            yolo_imgsz_side = 384,
-                                                                                                                            yolo_imgsz_center = 256,
-                                                                                                                        )
-                            
-                            
-                            
-                            
-                            
-
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.TapeCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        #wait t=1 sec
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        print (self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
-                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_TapeID_OK[i] = 0
-                                self.InspectionResult_TapeID_NG[i] = 0
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
-
-                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
-
-                        # ---- Update DB with this inspection contribution (delete+replace if same lot+serial) ----
-                        ok_add = int(sum(self.InspectionResult_TapeID_OK))
-                        ng_add = int(sum(self.InspectionResult_TapeID_NG))
-
-                        # Save row (handles overwrite by deleting same (part,lot,serial) then inserting new)
-                        # currentLOTNOP is optional here; it is NOT required for totals
-                        self.save_result_database(
-                            partName=int(self.inspection_config.widget),
-                            lotNumber=str(self.current_LotNumber),
-                            serialNumber=str(self.current_SerialNumber),
-                            currentLOTNOP=self.currentLot_NOP,
-                            timestampDate=None,
-                            kensainName=str(getattr(self, "kensainName", "")),
-                            ok_add=ok_add,
-                            ng_add=ng_add,
-                        )
-
-                        # Refresh current lot totals from DB (authoritative)
-                        self.cursor.execute("""
-                            SELECT COALESCE(SUM(ok_add), 0), COALESCE(SUM(ng_add), 0)
-                            FROM inspection_results
-                            WHERE partName=? AND lotNumber=?
-                        """, (int(self.inspection_config.widget), str(self.current_LotNumber)))
-                        ok_total, ng_total = self.cursor.fetchone()
-                        self.currentLot_NOP = [int(ok_total), int(ng_total)]
-
-                        #Emit the inspection result and serial number to holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                        print("Inspection Result Tape ID Emitted")
-                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
-
-
-
-                        self.SerialNumber_signal.emit(self.current_SerialNumber)
-                        self.LotNumber_signal.emit(self.current_LotNumber)
-
-                        self.prev_LotNumber = self.current_LotNumber
-                        self.prev_SerialNumber = self.current_SerialNumber
-                        self.temp_prev_NG = ng_add
-                        self.temp_prev_OK = ok_add
-                        time.sleep(0.5)
-
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected tape images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/tape"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.TapeCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-
-                if self.InstructionCode == 3:
-                    if self.InstructionCode_prev == 3:
-                        pass
-                        print("Already processed Tape Inspection command, skipping..."  )
-                    else:
-                    # if self.InstructionCode == 2:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doTapeInspection = False
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_down_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_down_crop", out_w=512, out_h=512)
-                      
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        if self.Tray_detection_left_result == 2 and self.Tray_detection_right_result == 3:
-                            print ("Tray detected as J30LH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray.")
-                            self.InspectionResult_Tray_NG = 1
-
-                        # check whether set part is set correctly
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-                        
-                        N_PARTS = 5
-                        # ensure these are indexable
-                        self.TapeExistInspectionImages        = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
-                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
-                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
-
-                        for i, crop in enumerate(parts):
-
-                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.TapeCorrectInspectionImages[i] = crop
-                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
-                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
-                                                                                                                            self.TapeCorrectInspectionImages[i], 
-                                                                                                                            model_left=self.AGCJ30RH_TAPE_LEFT_model, 
-                                                                                                                            model_right=self.AGCJ30RH_TAPE_RIGHT_model, 
-                                                                                                                            model_center=self.AGCJ30RH_TAPE_CENTER_model,
-                                                                                                                            enable_center=True,
-                                                                                                                            crop_from_top=True,
-                                                                                                                            crop_from_bottom=False,
-                                                                                                                            crop_height=128,
-                                                                                                                            trim_left=0, trim_right=0,
-                                                                                                                            left_width=256, right_width=256,
-                                                                                                                            dx_range_left=(2, 30), dx_range_right=(-25, 2),
-                                                                                                                            yolo_conf=0.3, yolo_iou=0.5,
-                                                                                                                            center_class_id=0,                          # your target class
-                                                                                                                            center_bbox_height_range=(1.0, 15.0),      # OK range in px
-                                                                                                                            center_pad=(0, 0, 0, 0), 
-                                                                                                                            debug_mode = self.debug,
-                                                                                                                            yolo_imgsz_side = 384,
-                                                                                                                            yolo_imgsz_center = 256,
-                                                                                                                        )
-                            
-                            
-                            
-                            
-                            
-
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.TapeCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        #wait t=1 sec
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        print (self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
-                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_TapeID_OK[i] = 0
-                                self.InspectionResult_TapeID_NG[i] = 0
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
-
-                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
-
-                        #Emit the inspection result and serial number to holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                        print("Inspection Result Tape ID Emitted")
-                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
-
-                        self.SerialNumber_signal.emit(self.current_SerialNumber)
-                        self.LotNumber_signal.emit(self.current_LotNumber)
-
-                        time.sleep(0.5)
-
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected tape images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/tape"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.TapeCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-
-
-                #emit the ethernet 
-                self.today_numofPart_signal.emit(self.currentLot_NOP)
-            
-                self.AGC_InspectionStatus.emit(self.InspectionStatus)
-
-            #J59J LH Inspection
-            if self.inspection_config.widget == 6:
-                self.handle_adjustments_and_counterreset()
-                self.part1Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part1_Crop", out_w=1771, out_h=121)
-                self.part2Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part2_Crop", out_w=1771, out_h=121)
-                self.part3Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part3_Crop", out_w=1771, out_h=121)
-                self.part4Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part4_Crop", out_w=1771, out_h=121)
-                self.part5Crop = self.crop_part(self.camFrame_ic4, "J59JLH_part5_Crop", out_w=1771, out_h=121)
-
-                self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-
-                if self.firstTimeInspection is False:
-                    if self.inspection_config.doInspection is False:
-                        self.InspectionTimeStart = time.time()
-                        self.firstTimeInspection = True
-                        self.inspection_config.doInspection = True
-                
-                self.partNumber_signal.emit(self.partNumber)
-
-                if self.InstructionCode != 0:
-                    self.InspectionImages[0] = self.part1Crop
-                    self.InspectionImages[1] = self.part2Crop
-                    self.InspectionImages[2] = self.part3Crop
-                    self.InspectionImages[3] = self.part4Crop
-                    self.InspectionImages[4] = self.part5Crop
-
-                if self.InstructionCode == 0:
-                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                    if self.InstructionCode_prev == 0:
-                        # print("Already processed Set Inspection command, skipping...")
-                        pass  # Skip, already processed
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self._reset_inspection_results()
-                        self._emit_zero_registers()
-                        time.sleep(0.5)
-
-                # 1 = Set Inspection
-                if self.InstructionCode == 1 or self.inspection_config.doInspection is True:
-                    if self.InstructionCode_prev == 1:
-                        # print("Already processed Set Inspection command, skipping...")
-                        pass
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doInspection = False
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
-
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        # self.InspectionResult_Tray_NG = 0
-                        if self.Tray_detection_left_result == 4 and self.Tray_detection_right_result == 5:
-                            print ("Tray detected as J59JLH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray.")
-                            self.InspectionResult_Tray_NG = 1
-
-                        # check whether set part is set correctly
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-
-                        for i, crop in enumerate(parts):
-
-                            self.SetExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.SetCorrectInspectionImages[i] = crop
-
-                            SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
-                            self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
-
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = JXX_Check(
-                                                                                                            self.SetCorrectInspectionImages[i],
-                                                                                                            model_left=self.AGCJ59JLH_SET_LEFT_model,
-                                                                                                            model_right=self.AGCJ59JLH_SET_RIGHT_model,
-                                                                                                            enable_center=False,                 # <- default already
-                                                                                                            crop_from_bottom=True,               # or crop_from_top=True
-                                                                                                            crop_height=128,
-                                                                                                            trim_left=0, trim_right=0,
-                                                                                                            left_width=256, right_width=256,
-                                                                                                            dx_range_left=(-40, -20),
-                                                                                                            dx_range_right=(-10, 10),
-                                                                                                            left_pad=(0, 0, 0, 0),
-                                                                                                            right_pad=(0, 0, 0, 0),
-                                                                                                            debug_mode = self.debug,
-                                                                                                            yolo_imgsz_side = 384,
-                                                                                                            yolo_imgsz_center = 256,
-                                                                                                        )
-                            
-
-                        
-                            
-                            
-                            
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.SetCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        #wait t=1 sec
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        self.InspectionResult_SetID_OK = np.flip(self.InspectionResult_SetID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_SetID_OK = [int(x) for x in self.InspectionResult_SetID_OK]
-                        self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_SetID_OK[i] = 0
-                                self.InspectionResult_SetID_NG[i] = 0
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
-                        self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
-
-                        #Emit the inspection result and serial number to holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"],[self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
-                        
-                        print("Inspection Result Set ID Emitted")
-                        self.SerialNumber_signal.emit(self.current_SerialNumber)
-                        self.LotNumber_signal.emit(self.current_LotNumber)
-                        time.sleep(0.5)
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected set images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/set"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.SetCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        
-                # 2 = Tape Inspection
-                if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
-
-                    if self.InstructionCode_prev == 2:
-                        print("Already processed Tape Inspection command, skipping...")
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doTapeInspection = False
-
-                        # ---- Tray detection ----
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
-
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        if self.Tray_detection_left_result == 4 and self.Tray_detection_right_result == 5:
-                            print("Tray detected as J59JLH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print("Tray detection failed or incorrect tray.")
-                            self.InspectionResult_Tray_NG = 1
-
-                        # ---- IV4 bypass (unchanged) ----
-                        if self.lotASCIICode_1 == 22089 and self.lotASCIICode_2 == 52:
-                            print("IV4 detected, skipping Tape Inspection...")
-                            self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.IV4_KensaResults_OK])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.IV4_KensaResults_NG])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                            print("Inspection Result Tape ID Emitted")
-                            time.sleep(0.5)
-                            continue
-
-                        # ---- DB-backed baseline NOP (survives reboot + supports overwrite of same lot+serial) ----
-                        # This returns lot totals EXCLUDING existing row for this (lot,serial) if it exists.
-                        self.prevLot_NOP = getattr(self, "currentLot_NOP", [0, 0]).copy()
-                        self.currentLot_NOP = self.get_last_entry_currentnumofPart(
-                            partName=int(self.inspection_config.widget),
-                            lotNumber=str(self.current_LotNumber),
-                            serialNumber=str(self.current_SerialNumber),
-                        )
-
-                        # ---- Main inspection ----
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-
-                        N_PARTS = 5
-                        self.TapeExistInspectionImages = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
-                        self.InspectionResult_DetectionID = [0] * N_PARTS
-                        self.InspectionResult_TapeID_OK = [0] * N_PARTS
-
-                        for i, crop in enumerate(parts):
-                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.TapeCorrectInspectionImages[i] = crop
-
-                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i], stream=True, verbose=False, imgsz=512)
-                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
-                                self.TapeCorrectInspectionImages[i],
-                                model_left=self.AGCJ59JLH_TAPE_LEFT_model,
-                                model_right=self.AGCJ59JLH_TAPE_RIGHT_model,
-                                model_center=self.AGCJ59JLH_TAPE_CENTER_model,
-                                enable_center=True,
-                                crop_from_top=False,
-                                crop_from_bottom=True,
-                                crop_height=128,
-                                trim_left=0, trim_right=64,
-                                left_width=256, right_width=256,
-                                dx_range_left=(15, 43), dx_range_right=(2, 25),
-                                yolo_conf=0.1, yolo_iou=0.5,
-                                center_class_id=0,
-                                center_bbox_height_range=(1.0, 15.0),
-                                center_pad=(0, 0, 0, 0),
-                                debug_mode=self.debug,
-                                yolo_imgsz_side=384,
-                                yolo_imgsz_center=256,
-                            )
-
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.TapeCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        print(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
-                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_TapeID_OK[i] = 0
-                                self.InspectionResult_TapeID_NG[i] = 0
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
-
-                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
-
-                        # ---- Update DB with this inspection contribution (delete+replace if same lot+serial) ----
-                        ok_add = int(sum(self.InspectionResult_TapeID_OK))
-                        ng_add = int(sum(self.InspectionResult_TapeID_NG))
-
-                        # Save row (handles overwrite by deleting same (part,lot,serial) then inserting new)
-                        # currentLOTNOP is optional here; it is NOT required for totals
-                        self.save_result_database(
-                            partName=int(self.inspection_config.widget),
-                            lotNumber=str(self.current_LotNumber),
-                            serialNumber=str(self.current_SerialNumber),
-                            currentLOTNOP=self.currentLot_NOP,
-                            timestampDate=None,
-                            kensainName=str(getattr(self, "kensainName", "")),
-                            ok_add=ok_add,
-                            ng_add=ng_add,
-                        )
-
-                        # Refresh current lot totals from DB (authoritative)
-                        self.cursor.execute("""
-                            SELECT COALESCE(SUM(ok_add), 0), COALESCE(SUM(ng_add), 0)
-                            FROM inspection_results
-                            WHERE partName=? AND lotNumber=?
-                        """, (int(self.inspection_config.widget), str(self.current_LotNumber)))
-                        ok_total, ng_total = self.cursor.fetchone()
-                        self.currentLot_NOP = [int(ok_total), int(ng_total)]
-
-                        # ---- Emit to PLC ----
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                        print("Inspection Result Tape ID Emitted")
-
-                        self.SerialNumber_signal.emit(self.current_SerialNumber)
-                        self.LotNumber_signal.emit(self.current_LotNumber)
-
-                        self.prev_LotNumber = self.current_LotNumber
-                        self.prev_SerialNumber = self.current_SerialNumber
-                        self.temp_prev_NG = ng_add
-                        self.temp_prev_OK = ok_add
-                        time.sleep(0.5)
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        save_dir = "./aikensa/training_images/tape"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.TapeCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-
-                # 3 = Tape ReInspection
-                if self.InstructionCode == 3:
-
-                    if self.InstructionCode_prev == 3:
-                        pass
-                        print("Already processed Tape Inspection command, skipping..."  )
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doTapeInspection = False
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_crop", out_w=512, out_h=512)
-
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        # self.InspectionResult_Tray_NG = 0
-                        if self.Tray_detection_left_result == 4 and self.Tray_detection_right_result == 5:
-                            print ("Tray detected as J59JLH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray.")
-                            self.InspectionResult_Tray_NG = 1
-
-                        # check whether set part is set correctly
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-                        
-                        N_PARTS = 5
-                        # ensure these are indexable
-                        self.TapeExistInspectionImages        = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
-                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
-                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
-
-                        for i, crop in enumerate(parts):
-
-                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.TapeCorrectInspectionImages[i] = crop
-                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
-                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
-                                                                                                                            self.TapeCorrectInspectionImages[i], 
-                                                                                                                            model_left=self.AGCJ59JLH_TAPE_LEFT_model, 
-                                                                                                                            model_right=self.AGCJ59JLH_TAPE_RIGHT_model, 
-                                                                                                                            model_center=self.AGCJ59JLH_TAPE_CENTER_model,
-                                                                                                                            enable_center=True,
-                                                                                                                            crop_from_top=False,
-                                                                                                                            crop_from_bottom=True,
-                                                                                                                            crop_height=128,
-                                                                                                                            trim_left=0, trim_right=64,
-                                                                                                                            left_width=256, right_width=256,
-                                                                                                                            dx_range_left=(15, 43), dx_range_right=(2, 25),
-                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
-                                                                                                                            center_class_id=0,                          # your target class
-                                                                                                                            center_bbox_height_range=(1.0, 15.0),      # OK range in px
-                                                                                                                            center_pad=(0, 0, 0, 0), 
-                                                                                                                            debug_mode = self.debug,
-                                                                                                                            yolo_imgsz_side = 384,
-                                                                                                                            yolo_imgsz_center = 256,
-                                                                                                                        )
-
-
-
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.TapeCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
-                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_TapeID_OK[i] = 0
-                                self.InspectionResult_TapeID_NG[i] = 0
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
-
-                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
-
-                        #Emit the inspection result and serial number to holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                        print("Inspection Result Tape ID Emitted")
-
-                        self.SerialNumber_signal.emit(self.current_SerialNumber)
-                        self.LotNumber_signal.emit(self.current_LotNumber)
-
-                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
-                        time.sleep(0.5)
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected tape images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/tape"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.TapeCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-            
-                #emit the ethernet 
-                self.current_numofPart_signal.emit(self.currentLot_NOP)
-            
-                self.AGC_InspectionStatus.emit(self.InspectionStatus)
-            #J59J RH Inspection
-            if self.inspection_config.widget == 5:
-                self.handle_adjustments_and_counterreset()
-                self.part1Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part1_Crop", out_w=1771, out_h=121)
-                self.part2Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part2_Crop", out_w=1771, out_h=121)
-                self.part3Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part3_Crop", out_w=1771, out_h=121)
-                self.part4Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part4_Crop", out_w=1771, out_h=121)
-                self.part5Crop = self.crop_part(self.camFrame_ic4, "J59JRH_part5_Crop", out_w=1771, out_h=121)
-
-                self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-
-                if self.firstTimeInspection is False:
-                    if self.inspection_config.doInspection is False:
-                        self.InspectionTimeStart = time.time()
-                        self.firstTimeInspection = True
-                        self.inspection_config.doInspection = True
-                
-                self.partNumber_signal.emit(self.partNumber)
-
-                if self.InstructionCode != 0:
-                    self.InspectionImages[0] = self.part1Crop
-                    self.InspectionImages[1] = self.part2Crop
-                    self.InspectionImages[2] = self.part3Crop
-                    self.InspectionImages[3] = self.part4Crop
-                    self.InspectionImages[4] = self.part5Crop
-
-                if self.InstructionCode == 0:
-                    self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
-                    if self.InstructionCode_prev == 0:
-                        # print("Already processed Set Inspection command, skipping...")
-                        pass  # Skip, already processed
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self._reset_inspection_results()
-                        self._emit_zero_registers()
-                        time.sleep(0.5)
-
-                # 1 = Set Inspection
-                if self.InstructionCode == 1 or self.inspection_config.doInspection is True:
-                    if self.InstructionCode_prev == 1:
-                        # print("Already processed Set Inspection command, skipping...")
-                        pass
-                    else:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doInspection = False
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_down_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_down_crop", out_w=512, out_h=512)
-
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-
-                        # self.InspectionResult_Tray_NG = 0
-                        if self.Tray_detection_left_result == 6 and self.Tray_detection_right_result == 7:
-                            print ("Tray detected as J59JRH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray.")
-                            self.InspectionResult_Tray_NG = 1
-
-                        # check whether set part is set correctly
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-
-                        for i, crop in enumerate(parts):
-
-                            self.SetExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.SetCorrectInspectionImages[i] = crop
-
-                            SetPartExist_result = self.AGC_ALL_WS_DETECTION_model(self.SetExistInspectionImages[i],stream=True, verbose=False)
-                            self.InspectionResult_DetectionID[i] = list(SetPartExist_result)[0].probs.data.argmax().item()
-
-                            self.SetCorrectInspectionImages_result[i], self.InspectionResult_SetID_OK[i], _ = JXX_Check(
-                                                                                                            self.SetCorrectInspectionImages[i],
-                                                                                                            model_left=self.AGCJ59JRH_SET_LEFT_model,
-                                                                                                            model_right=self.AGCJ59JRH_SET_RIGHT_model,
-                                                                                                            enable_center=False,                 # <- default already
-                                                                                                            crop_from_bottom=True,               # or crop_from_top=True
-                                                                                                            crop_height=128,
-                                                                                                            trim_left=0, trim_right=64,
-                                                                                                            left_width=256, right_width=256,
-                                                                                                            dx_range_left=(-40, -20),
-                                                                                                            dx_range_right=(-10, 10),
-                                                                                                            left_pad=(0, 0, 0, 0),
-                                                                                                            right_pad=(0, 0, 0, 0),
-                                                                                                            debug_mode = self.debug,
-                                                                                                            yolo_imgsz_side = 384,
-                                                                                                            yolo_imgsz_center = 256,
-                                                                                                        )
-                            
-
-                        
-                            
-                            
-                            
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.SetCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        #wait t=1 sec
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        self.InspectionResult_SetID_OK = np.flip(self.InspectionResult_SetID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_SetID_OK = [int(x) for x in self.InspectionResult_SetID_OK]
-                        self.InspectionResult_SetID_NG = [1 - x for x in self.InspectionResult_SetID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_SetID_OK[i] = 0
-                                self.InspectionResult_SetID_NG[i] = 0
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
-                        self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
-
-                        #Emit the inspection result and serial number to holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"],[self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"],[1])
-                        
-                        print("Inspection Result Set ID Emitted")
-                        self.SerialNumber_signal.emit(self.current_SerialNumber)
-                        self.LotNumber_signal.emit(self.current_LotNumber)
-                        time.sleep(0.5)
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected set images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/set"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.SetCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        
-                # 2 = Tape Inspection
-                if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
-
-                    if self.InstructionCode_prev == 2:
-                        pass
-                        print("Already processed Tape Inspection command, skipping..."  )
-                    else:
-
-                    # if self.InstructionCode == 2:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doTapeInspection = False
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_down_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_down_crop", out_w=512, out_h=512)
-
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        if self.Tray_detection_left_result == 6 and self.Tray_detection_right_result == 7:
-                            print ("Tray detected as J59JLH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray.")
-                            self.InspectionResult_Tray_NG = 1
-
-                        # ---- IV4 bypass (unchanged) ----
-                        if self.lotASCIICode_1 == 22089 and self.lotASCIICode_2 == 52:
-                            print("IV4 detected, skipping Tape Inspection...")
-                            self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.IV4_KensaResults_OK])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.IV4_KensaResults_NG])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                            self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                            print("Inspection Result Tape ID Emitted")
-                            time.sleep(0.5)
-                            continue
-
-                        # ---- DB-backed baseline NOP (survives reboot + supports overwrite of same lot+serial) ----
-                        # This returns lot totals EXCLUDING existing row for this (lot,serial) if it exists.
-                        self.prevLot_NOP = getattr(self, "currentLot_NOP", [0, 0]).copy()
-                        self.currentLot_NOP = self.get_last_entry_currentnumofPart(
-                            partName=int(self.inspection_config.widget),
-                            lotNumber=str(self.current_LotNumber),
-                            serialNumber=str(self.current_SerialNumber),
-                        )
-
-                        # ---- Main inspection ----
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-                        
-                        N_PARTS = 5
-                        # ensure these are indexable
-                        self.TapeExistInspectionImages        = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
-                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
-                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
-
-                        for i, crop in enumerate(parts):
-
-                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.TapeCorrectInspectionImages[i] = crop
-
-                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
-                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
-                                                                                                                            self.TapeCorrectInspectionImages[i], 
-                                                                                                                            model_left=self.AGCJ59JRH_TAPE_LEFT_model, 
-                                                                                                                            model_right=self.AGCJ59JRH_TAPE_RIGHT_model, 
-                                                                                                                            model_center=self.AGCJ59JRH_TAPE_CENTER_model,
-                                                                                                                            enable_center=True,
-                                                                                                                            crop_from_top=False,
-                                                                                                                            crop_from_bottom=True,
-                                                                                                                            crop_height=128,
-                                                                                                                            trim_left=0, trim_right=64,
-                                                                                                                            left_width=256, right_width=256,
-                                                                                                                            dx_range_left=(15, 43), dx_range_right=(2, 25),
-                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
-                                                                                                                            center_class_id=0,                          # your target class
-                                                                                                                            center_bbox_height_range=(1.0, 15.0),      # OK range in px
-                                                                                                                            center_pad=(0, 0, 0, 0), 
-                                                                                                                            debug_mode = self.debug,
-                                                                                                                            yolo_imgsz_side = 384,
-                                                                                                                            yolo_imgsz_center = 256,
-                                                                                                                        )
-
-
-
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.TapeCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        #wait t=1 sec
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        print (self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
-                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_TapeID_OK[i] = 0
-                                self.InspectionResult_TapeID_NG[i] = 0
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
-
-                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
-
-                        # ---- Update DB with this inspection contribution (delete+replace if same lot+serial) ----
-                        ok_add = int(sum(self.InspectionResult_TapeID_OK))
-                        ng_add = int(sum(self.InspectionResult_TapeID_NG))
-
-                        # Save row (handles overwrite by deleting same (part,lot,serial) then inserting new)
-                        # currentLOTNOP is optional here; it is NOT required for totals
-                        self.save_result_database(
-                            partName=int(self.inspection_config.widget),
-                            lotNumber=str(self.current_LotNumber),
-                            serialNumber=str(self.current_SerialNumber),
-                            currentLOTNOP=self.currentLot_NOP,
-                            timestampDate=None,
-                            kensainName=str(getattr(self, "kensainName", "")),
-                            ok_add=ok_add,
-                            ng_add=ng_add,
-                        )
-
-                        # Refresh current lot totals from DB (authoritative)
-                        self.cursor.execute("""
-                            SELECT COALESCE(SUM(ok_add), 0), COALESCE(SUM(ng_add), 0)
-                            FROM inspection_results
-                            WHERE partName=? AND lotNumber=?
-                        """, (int(self.inspection_config.widget), str(self.current_LotNumber)))
-                        ok_total, ng_total = self.cursor.fetchone()
-                        self.currentLot_NOP = [int(ok_total), int(ng_total)]
-
-                        # ---- Emit to PLC ----
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                        print("Inspection Result Tape ID Emitted")
-
-                        self.SerialNumber_signal.emit(self.current_SerialNumber)
-                        self.LotNumber_signal.emit(self.current_LotNumber)
-
-                        self.prev_LotNumber = self.current_LotNumber
-                        self.prev_SerialNumber = self.current_SerialNumber
-                        self.temp_prev_NG = ng_add
-                        self.temp_prev_OK = ok_add
-
-                        time.sleep(0.5)
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected tape images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/tape"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.TapeCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        
-                # 3 = Tape ReInspection
-                if self.InstructionCode == 3:
-                    if self.InstructionCode_prev == 3:
-                        pass
-                        print("Already processed Tape Inspection command, skipping..."  )
-                    else:
-
-                    # if self.InstructionCode == 2:
-                        self.InstructionCode_prev = self.InstructionCode
-                        self.inspection_config.doTapeInspection = False
-
-                        # Tray detection
-                        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, "Tray_detection_left_down_crop", out_w=512, out_h=512)
-                        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, "Tray_detection_right_down_crop", out_w=512, out_h=512)
-
-                        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
-                        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
-                        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
-
-                        # self.InspectionResult_Tray_NG = 0
-                        if self.Tray_detection_left_result == 6 and self.Tray_detection_right_result == 7:
-                            print ("Tray detected as J59JLH correctly.")
-                            self.InspectionResult_Tray_NG = 0
-                        else:
-                            print ("Tray detection failed or incorrect tray.")
-                            self.InspectionResult_Tray_NG = 1
-
-                        # check whether set part is set correctly
-                        parts = [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
-                        
-                        N_PARTS = 5
-                        # ensure these are indexable
-                        self.TapeExistInspectionImages        = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages      = [None] * N_PARTS
-                        self.TapeCorrectInspectionImages_result = [None] * N_PARTS
-                        self.InspectionResult_DetectionID     = [0]    * N_PARTS
-                        self.InspectionResult_TapeID_OK       = [0]    * N_PARTS
-
-                        for i, crop in enumerate(parts):
-
-                            self.TapeExistInspectionImages[i] = cv2.resize(crop, (512, 512))
-                            self.TapeCorrectInspectionImages[i] = crop
-                            TapePartExist_result = self.AGC_ALL_WS_DETECTION_model(self.TapeExistInspectionImages[i],stream=True, verbose=False, imgsz=512)
-                            self.InspectionResult_DetectionID[i] = list(TapePartExist_result)[0].probs.data.argmax().item()
-                            self.TapeCorrectInspectionImages_result[i], self.InspectionResult_TapeID_OK[i], center_wins = JXX_Check(
-                                                                                                                            self.TapeCorrectInspectionImages[i], 
-                                                                                                                            model_left=self.AGCJ59JRH_TAPE_LEFT_model, 
-                                                                                                                            model_right=self.AGCJ59JRH_TAPE_RIGHT_model, 
-                                                                                                                            model_center=self.AGCJ59JRH_TAPE_CENTER_model,
-                                                                                                                            enable_center=True,
-                                                                                                                            crop_from_top=False,
-                                                                                                                            crop_from_bottom=True,
-                                                                                                                            crop_height=124,
-                                                                                                                            trim_left=0, trim_right=64,
-                                                                                                                            left_width=256, right_width=256,
-                                                                                                                            dx_range_left=(15, 43), dx_range_right=(2, 25),
-                                                                                                                            yolo_conf=0.1, yolo_iou=0.5,
-                                                                                                                            center_class_id=0,                          # your target class
-                                                                                                                            center_bbox_height_range=(1.0, 15.0),      # OK range in px
-                                                                                                                            center_pad=(0, 0, 0, 0), 
-                                                                                                                            debug_mode = self.debug,
-                                                                                                                            yolo_imgsz_side = 384,
-                                                                                                                            yolo_imgsz_center = 256,
-                                                                                                                        )
-
-
-
-                        (
-                            self.part1Crop,
-                            self.part2Crop,
-                            self.part3Crop,
-                            self.part4Crop,
-                            self.part5Crop,
-                        ) = self.TapeCorrectInspectionImages_result[:5]
-
-                        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
-                        time.sleep(0.5)
-
-                        self.InspectionResult_DetectionID = np.flip(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK = np.flip(self.InspectionResult_TapeID_OK)
-
-                        self.InspectionResult_DetectionID = [int(x) for x in self.InspectionResult_DetectionID]
-                        self.InspectionResult_TapeID_OK = [int(x) for x in self.InspectionResult_TapeID_OK]
-                        self.InspectionResult_TapeID_NG = [1 - x for x in self.InspectionResult_TapeID_OK]
-
-                        for i, d in enumerate(self.InspectionResult_DetectionID):
-                            if d == 1:
-                                self.InspectionResult_TapeID_OK[i] = 0
-                                self.InspectionResult_TapeID_NG[i] = 0
-
-                        print(f"Inspection Result Detection ID: {self.InspectionResult_DetectionID}")
-                        print(f"Inspection Result Tape OK ID: {self.InspectionResult_TapeID_OK}")
-                        print(f"Inspection Result Tape NG ID: {self.InspectionResult_TapeID_NG}")
-
-                        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
-                        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
-                        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
-
-                        print(f"NG BIT INT: {self.InspectionResult_TapeID_NG}")
-
-                        #Emit the inspection result and serial number to holding registers
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
-                        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
-                        print("Inspection Result Tape ID Emitted")
-
-                        self.SerialNumber_signal.emit(self.current_SerialNumber)
-                        self.LotNumber_signal.emit(self.current_LotNumber)
-
-                        # Wait for 0.5 sec then emit return state code of 0 to show that it can accept the next instruction
-                        time.sleep(0.5)
-
-                        #######(SAVE IMAGES FOR TRAINING)##########
-                        # Save corrected tape images for training (compact & safe)
-                        save_dir = "./aikensa/training_images/tape"
-                        os.makedirs(save_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        for i, img in enumerate(self.TapeCorrectInspectionImages):
-                            if img is None:
-                                continue
-                            filename = f"{save_dir}/{timestamp}_part{i+1}.jpg"
-                            cv2.imwrite(filename, img)
-                            print(f"Saved {filename}")
-                        #######(SAVE IMAGES FOR TRAINING)##########
-            
-                #emit the ethernet 
-                self.current_numofPart_signal.emit(self.currentLot_NOP)
-            
-                self.AGC_InspectionStatus.emit(self.InspectionStatus)
+            widget_config = self.widget_inspection_configs.get(self.inspection_config.widget)
+            if widget_config is not None:
+                if self.process_widget_inspection(widget_config):
+                    continue
                                          
             if self.InstructionCode == 5:
                 # Close app and forcefully turn off PC
@@ -2357,57 +529,38 @@ class InspectionThread(QThread):
         self.inspection_config.kansei_minus_10 = False
 
     def manual_adjustment(self, currentPart, Totalpart,
-                          furyou_plus, furyou_minus, 
+                          furyou_plus, furyou_minus,
                           furyou_plus_10, furyou_minus_10,
                           kansei_plus, kansei_minus,
                           kansei_plus_10, kansei_minus_10):
-        
-        ok_count_current = currentPart[0]
-        ng_count_current = currentPart[1]
-        ok_count_total = Totalpart[0]
-        ng_count_total = Totalpart[1]
-        
+
+        ok_delta = 0
+        ng_delta = 0
+
         if furyou_plus:
-            ng_count_current += 1
-            ng_count_total += 1
-
+            ng_delta += 1
         if furyou_plus_10:
-            ng_count_current += 10
-            ng_count_total += 10
-
-        if furyou_minus and ng_count_current > 0 and ng_count_total > 0:
-            ng_count_current -= 1
-            ng_count_total -= 1
-        
-        if furyou_minus_10 and ng_count_current > 9 and ng_count_total > 9:
-            ng_count_current -= 10
-            ng_count_total -= 10
+            ng_delta += 10
+        if furyou_minus:
+            ng_delta -= 1
+        if furyou_minus_10:
+            ng_delta -= 10
 
         if kansei_plus:
-            ok_count_current += 1
-            ok_count_total += 1
-
+            ok_delta += 1
         if kansei_plus_10:
-            ok_count_current += 10
-            ok_count_total += 10
+            ok_delta += 10
+        if kansei_minus:
+            ok_delta -= 1
+        if kansei_minus_10:
+            ok_delta -= 10
 
-        if kansei_minus and ok_count_current > 0 and ok_count_total > 0:
-            ok_count_current -= 1
-            ok_count_total -= 1
-
-        if kansei_minus_10 and ok_count_current > 9 and ok_count_total > 9:
-            ok_count_current -= 10
-            ok_count_total -= 10
+        ok_count_current = max(int(currentPart[0]) + ok_delta, 0)
+        ng_count_current = max(int(currentPart[1]) + ng_delta, 0)
+        ok_count_total = max(int(Totalpart[0]) + ok_delta, 0)
+        ng_count_total = max(int(Totalpart[1]) + ng_delta, 0)
 
         self.setCounterFalse()
-        self.save_result_database(partname = self.widget_dir_map[self.inspection_config.widget],
-                numofPart = [ok_count_total, ng_count_total], 
-                currentnumofPart = [ok_count_current, ng_count_current],
-                deltaTime = 0.0,
-                kensainName = self.inspection_config.kensainNumber, 
-                status = "MANUAL",
-                NGreason = "MANUAL",
-                PPMS = "MANUAL")
         return [ok_count_current, ng_count_current], [ok_count_total, ng_count_total]
     
     def save_result_database(
@@ -2506,6 +659,428 @@ class InspectionThread(QThread):
         for k, v in data.items():
             setattr(self, k, v)
         print(f"[CropCoords] Loaded keys: {list(data.keys())[:5]} ...")
+
+    def load_widget_inspection_config(self, yaml_path: str) -> dict[int, dict]:
+        abs_path = self._resolve_yaml_path(yaml_path)
+        with open(abs_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        widget_configs = {}
+        for widget_key, config in (data.get("widgets") or {}).items():
+            normalized = dict(config)
+            normalized["widget"] = int(widget_key)
+
+            tray_config = dict(normalized.get("tray") or {})
+            mismatch_ng = tray_config.get("mismatch_ng") or {}
+            tray_config["mismatch_ng"] = {
+                int(command): int(value)
+                for command, value in mismatch_ng.items()
+            }
+            normalized["tray"] = tray_config
+
+            widget_configs[normalized["widget"]] = normalized
+
+        return widget_configs
+
+    def _get_current_part_crops(self) -> list:
+        return [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]
+
+    def _set_current_part_crops(self, crops: list) -> None:
+        for index, crop in enumerate(crops[:5], start=1):
+            setattr(self, f"part{index}Crop", crop)
+
+    def _sync_inspection_images(self) -> None:
+        if self.InstructionCode == 0:
+            return
+
+        for index, crop in enumerate(self._get_current_part_crops()[:5]):
+            self.InspectionImages[index] = crop
+
+    def _pause_for_plc(self) -> None:
+        self.msleep(self.command_pause_ms)
+
+    def _prepare_widget_inspection(self, widget_config: dict) -> None:
+        self.handle_adjustments_and_counterreset()
+
+        cropped_parts = [
+            self.crop_part(self.camFrame_ic4, crop_name, out_w=1771, out_h=121)
+            for crop_name in widget_config["part_crop_names"]
+        ]
+        self._set_current_part_crops(cropped_parts)
+        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+
+        if self.firstTimeInspection is False and self.inspection_config.doInspection is False:
+            self.InspectionTimeStart = time.time()
+            self.firstTimeInspection = True
+            self.inspection_config.doInspection = True
+
+        self.partNumber_signal.emit(self.partNumber)
+        self._sync_inspection_images()
+
+    def _handle_zero_instruction(self) -> None:
+        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [0])
+        if self.InstructionCode_prev == 0:
+            return
+
+        self.InstructionCode_prev = self.InstructionCode
+        self._reset_inspection_results()
+        self._emit_zero_registers()
+        self._pause_for_plc()
+
+    def _run_tray_detection(self, widget_config: dict, command: int) -> int:
+        tray_config = widget_config["tray"]
+        crop_names = tray_config["crop_names"]
+
+        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, crop_names["left"], out_w=512, out_h=512)
+        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, crop_names["right"], out_w=512, out_h=512)
+
+        self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
+        self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
+        print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
+
+        expected_left, expected_right = tray_config["expected_ids"]
+        if (self.Tray_detection_left_result, self.Tray_detection_right_result) == (expected_left, expected_right):
+            print(f"Tray detected as {widget_config['part_name']} correctly.")
+            self.InspectionResult_Tray_NG = 0
+        else:
+            print(f"Tray detection failed or incorrect tray for {widget_config['part_name']}.")
+            self.InspectionResult_Tray_NG = tray_config["mismatch_ng"].get(command, 1)
+
+        return self.InspectionResult_Tray_NG
+
+    def _resolve_phase_models(self, phase_config: dict) -> dict:
+        models = phase_config.get("models") or {}
+        resolved_models = {
+            "model_left": getattr(self, models["left"]),
+            "model_right": getattr(self, models["right"]),
+        }
+
+        center_model = models.get("center")
+        if center_model:
+            resolved_models["model_center"] = getattr(self, center_model)
+
+        return resolved_models
+
+    def _run_phase_checks(self, phase_name: str, phase_config: dict) -> tuple[list, list, list]:
+        parts = self._get_current_part_crops()
+        part_count = len(parts)
+        exist_images = [None] * part_count
+        source_images = list(parts)
+        corrected_images = [None] * part_count
+        detection_ids = [0] * part_count
+        ok_ids = [0] * part_count
+
+        detection_kwargs = {"stream": True, "verbose": False}
+        detection_imgsz = phase_config.get("detection_imgsz")
+        if detection_imgsz is not None:
+            detection_kwargs["imgsz"] = detection_imgsz
+
+        check_kwargs = dict(phase_config.get("check") or {})
+        if "center_ok_class" in check_kwargs:
+            check_kwargs["center_ok_class"] = check_kwargs.pop("center_ok_class")
+        elif "center_class_id" in check_kwargs:
+            check_kwargs["center_ok_class"] = check_kwargs.pop("center_class_id")
+        check_kwargs.pop("center_bbox_height_range", None)
+        check_kwargs["debug_mode"] = self.debug
+        model_kwargs = self._resolve_phase_models(phase_config)
+
+        for index, crop in enumerate(parts):
+            exist_images[index] = cv2.resize(crop, (512, 512))
+            part_exist_result = self.AGC_ALL_WS_DETECTION_model(exist_images[index], **detection_kwargs)
+            detection_ids[index] = list(part_exist_result)[0].probs.data.argmax().item()
+            corrected_images[index], ok_ids[index], _ = JXX_Check(
+                crop,
+                **model_kwargs,
+                **check_kwargs,
+            )
+
+        if phase_name == "set":
+            self.SetExistInspectionImages = exist_images
+            self.SetCorrectInspectionImages = source_images
+            self.SetCorrectInspectionImages_result = corrected_images
+        else:
+            self.TapeExistInspectionImages = exist_images
+            self.TapeCorrectInspectionImages = source_images
+            self.TapeCorrectInspectionImages_result = corrected_images
+
+        return corrected_images, detection_ids, ok_ids
+
+    def _finalize_phase_results(self, detection_ids: list, ok_ids: list) -> tuple[list, list, list]:
+        detection_result = [int(value) for value in reversed(detection_ids)]
+        ok_result = [int(value) for value in reversed(ok_ids)]
+        ng_result = [1 - value for value in ok_result]
+
+        for index, detected in enumerate(detection_result):
+            if detected == 1:
+                ok_result[index] = 0
+                ng_result[index] = 0
+
+        return detection_result, ok_result, ng_result
+
+    def _emit_serial_registers(self) -> None:
+        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_front"], [self.serialNumber_front])
+        self.requestModbusWrite.emit(self.holding_register_map["return_serialNumber_back"], [self.serialNumber_back])
+
+    def _emit_serial_and_lot(self) -> None:
+        self.SerialNumber_signal.emit(self.current_SerialNumber)
+        self.LotNumber_signal.emit(self.current_LotNumber)
+        self.last_emitted_serial_number = self.current_SerialNumber
+        self.last_emitted_lot_number = self.current_LotNumber
+
+    def _emit_set_results(self) -> None:
+        self._emit_serial_registers()
+        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_partexist"], [self.InspectionResult_DetectionID_int])
+        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_OK"], [self.InspectionResult_SetID_OK_int])
+        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_set_results_NG"], [self.InspectionResult_SetID_NG_int])
+        self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
+        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [1])
+
+    def _emit_tape_results(self, emit_pallet_error: bool) -> None:
+        self._emit_serial_registers()
+        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_partexist"], [self.InspectionResult_DetectionID_int])
+        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.InspectionResult_TapeID_OK_int])
+        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.InspectionResult_TapeID_NG_int])
+        if emit_pallet_error:
+            self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
+        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
+
+    def _emit_iv4_bypass_results(self, emit_pallet_error: bool) -> None:
+        self._emit_serial_registers()
+        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_OK"], [self.IV4_KensaResults_OK])
+        self.requestModbusWrite.emit(self.holding_register_map["return_AIKENSA_KensaResults_tapeinspection_results_NG"], [self.IV4_KensaResults_NG])
+        if emit_pallet_error:
+            self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
+        self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
+
+    def _save_inspection_images(self, widget_config: dict, phase: str, images: list, ok_results: list, ng_results: list) -> None:
+        timestamp = datetime.now()
+        date_dir = timestamp.strftime("%Y%m%d")
+        timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S_%f")
+        part_name = widget_config["part_name"]
+        lot_number = str(self.current_LotNumber or "NOLOT")
+        serial_number = str(self.current_SerialNumber or "NOSERIAL")
+
+        for index, image in enumerate(images):
+            if image is None:
+                continue
+
+            is_ok = index < len(ok_results) and int(ok_results[index]) == 1
+            is_ng = index < len(ng_results) and int(ng_results[index]) == 1
+
+            if is_ok:
+                result_dir = "OK"
+            elif is_ng:
+                result_dir = "NG"
+            else:
+                continue
+
+            save_dir = os.path.join(
+                "./aikensa/inspection_results",
+                part_name,
+                date_dir,
+                phase,
+                result_dir,
+                f"part{index + 1}",
+            )
+            os.makedirs(save_dir, exist_ok=True)
+            filename = os.path.join(
+                save_dir,
+                f"{timestamp_str}_lot-{lot_number}_serial-{serial_number}.jpg",
+            )
+            cv2.imwrite(filename, image)
+            print(f"Saved {filename}")
+
+    def _refresh_current_lot_totals(self, widget: int) -> None:
+        if not self.current_LotNumber:
+            self.currentLot_NOP = [0, 0]
+            return
+
+        self.cursor.execute(
+            """
+            SELECT COALESCE(SUM(ok_add), 0), COALESCE(SUM(ng_add), 0)
+            FROM inspection_results
+            WHERE partName=? AND lotNumber=?
+            """,
+            (int(widget), str(self.current_LotNumber)),
+        )
+        ok_total, ng_total = self.cursor.fetchone()
+        self.currentLot_NOP = [int(ok_total), int(ng_total)]
+
+    def _refresh_today_part_totals(self, widget: int) -> None:
+        self.cursor.execute(
+            """
+            SELECT COALESCE(SUM(ok_add), 0), COALESCE(SUM(ng_add), 0)
+            FROM inspection_results
+            WHERE partName=? AND DATE(timestamp) = DATE('now', 'localtime')
+            """,
+            (int(widget),),
+        )
+        ok_total, ng_total = self.cursor.fetchone()
+        self.todayPart_NOP = [int(ok_total), int(ng_total)]
+
+    def _get_scoped_current_offset(self, widget: int) -> list[int]:
+        current_lot = self.current_LotNumber or ""
+        if self.current_counter_offset_lot.get(widget) != current_lot:
+            self.current_counter_offset_lot[widget] = current_lot
+            self.current_counter_offsets[widget] = [0, 0]
+        return self.current_counter_offsets[widget]
+
+    def _get_scoped_today_offset(self, widget: int) -> list[int]:
+        today_key = datetime.now().strftime("%Y%m%d")
+        if self.today_counter_offset_day != today_key:
+            self.today_counter_offset_day = today_key
+            self.today_counter_offsets = {
+                key: [0, 0] for key in self.widget_dir_map
+            }
+        return self.today_counter_offsets[widget]
+
+    @staticmethod
+    def _apply_count_offset(base_counts: list[int], offset_counts: list[int]) -> list[int]:
+        return [
+            max(int(base_counts[0]) + int(offset_counts[0]), 0),
+            max(int(base_counts[1]) + int(offset_counts[1]), 0),
+        ]
+
+    def _get_display_current_counts(self, widget: int) -> list[int]:
+        return self._apply_count_offset(self.currentLot_NOP, self._get_scoped_current_offset(widget))
+
+    def _get_display_today_counts(self, widget: int) -> list[int]:
+        return self._apply_count_offset(self.todayPart_NOP, self._get_scoped_today_offset(widget))
+
+    def _persist_tape_counts(self, widget: int) -> None:
+        ok_add = int(sum(self.InspectionResult_TapeID_OK))
+        ng_add = int(sum(self.InspectionResult_TapeID_NG))
+
+        self.save_result_database(
+            partName=int(widget),
+            lotNumber=str(self.current_LotNumber),
+            serialNumber=str(self.current_SerialNumber),
+            currentLOTNOP=self.currentLot_NOP,
+            timestampDate=None,
+            kensainName=str(getattr(self, "kensainName", "")),
+            ok_add=ok_add,
+            ng_add=ng_add,
+        )
+        self._refresh_current_lot_totals(widget)
+        self.prev_LotNumber = self.current_LotNumber
+        self.prev_SerialNumber = self.current_SerialNumber
+        self.temp_prev_OK = ok_add
+        self.temp_prev_NG = ng_add
+
+    def _iv4_bypass_active(self) -> bool:
+        return self.lotASCIICode_1 == 22089 and self.lotASCIICode_2 == 52
+
+    def _run_set_command(self, widget_config: dict) -> None:
+        if self.InstructionCode_prev == 1:
+            return
+
+        self.InstructionCode_prev = self.InstructionCode
+        self.inspection_config.doInspection = False
+        self._run_tray_detection(widget_config, 1)
+
+        corrected_parts, detection_ids, ok_ids = self._run_phase_checks("set", widget_config["set"])
+        self._set_current_part_crops(corrected_parts)
+        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+        self._pause_for_plc()
+
+        self.InspectionResult_DetectionID, self.InspectionResult_SetID_OK, self.InspectionResult_SetID_NG = self._finalize_phase_results(detection_ids, ok_ids)
+        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+        self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
+        self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
+
+        self._emit_set_results()
+        if widget_config.get("emit_serial_lot_on_set"):
+            self._emit_serial_and_lot()
+        print("Inspection Result Set ID Emitted")
+        self._pause_for_plc()
+        self._save_inspection_images(
+            widget_config,
+            "set",
+            self.SetCorrectInspectionImages,
+            self.InspectionResult_SetID_OK,
+            self.InspectionResult_SetID_NG,
+        )
+
+    def _run_tape_command(self, widget_config: dict, phase_name: str, command: int) -> bool:
+        if self.InstructionCode_prev == command:
+            print("Already processed Tape Inspection command, skipping...")
+            return False
+
+        self.InstructionCode_prev = self.InstructionCode
+        self.inspection_config.doTapeInspection = False
+        self._run_tray_detection(widget_config, command)
+
+        phase_config = widget_config[phase_name]
+        phase_dir = "tape" if phase_name == "tape" else "reinspection"
+        emit_pallet_error = widget_config.get("emit_pallet_error_for_tape", True)
+
+        if command == 2 and phase_config.get("iv4_bypass") and self._iv4_bypass_active():
+            print("IV4 detected, skipping Tape Inspection...")
+            self._emit_iv4_bypass_results(emit_pallet_error)
+            print("Inspection Result Tape ID Emitted")
+            self._pause_for_plc()
+            return True
+
+        if phase_config.get("persist_counts"):
+            self.prevLot_NOP = getattr(self, "currentLot_NOP", [0, 0]).copy()
+            self.currentLot_NOP = self.get_last_entry_currentnumofPart(
+                partName=int(self.inspection_config.widget),
+                lotNumber=str(self.current_LotNumber),
+                serialNumber=str(self.current_SerialNumber),
+            )
+
+        corrected_parts, detection_ids, ok_ids = self._run_phase_checks("tape", phase_config)
+        self._set_current_part_crops(corrected_parts)
+        self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
+        self._pause_for_plc()
+
+        self.InspectionResult_DetectionID, self.InspectionResult_TapeID_OK, self.InspectionResult_TapeID_NG = self._finalize_phase_results(detection_ids, ok_ids)
+        self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
+        self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
+        self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
+
+        if phase_config.get("persist_counts"):
+            self._persist_tape_counts(self.inspection_config.widget)
+
+        self._emit_tape_results(emit_pallet_error)
+        self._emit_serial_and_lot()
+        print("Inspection Result Tape ID Emitted")
+        self._pause_for_plc()
+        self._save_inspection_images(
+            widget_config,
+            phase_dir,
+            self.TapeCorrectInspectionImages,
+            self.InspectionResult_TapeID_OK,
+            self.InspectionResult_TapeID_NG,
+        )
+        return False
+
+    def _emit_widget_counts(self, widget_config: dict) -> None:
+        widget = int(widget_config["widget"])
+        self._refresh_current_lot_totals(widget)
+        self._refresh_today_part_totals(widget)
+        self.current_numofPart_signal.emit(self._get_display_current_counts(widget))
+        self.today_numofPart_signal.emit(self._get_display_today_counts(widget))
+
+    def process_widget_inspection(self, widget_config: dict) -> bool:
+        self._prepare_widget_inspection(widget_config)
+
+        if self.InstructionCode == 0:
+            self._handle_zero_instruction()
+
+        if self.InstructionCode == 1 or self.inspection_config.doInspection is True:
+            self._run_set_command(widget_config)
+
+        if self.InstructionCode == 2 or self.inspection_config.doTapeInspection is True:
+            if self._run_tape_command(widget_config, "tape", 2):
+                return True
+
+        if self.InstructionCode == 3:
+            self._run_tape_command(widget_config, "reinspection", 3)
+
+        self._emit_widget_counts(widget_config)
+        self.AGC_InspectionStatus.emit(self.InspectionStatus)
+        return False
 
     def draw_status_text_PIL(self, image, text, color, size = "normal", x_offset = 0, y_offset = 0):
 
@@ -2627,6 +1202,26 @@ class InspectionThread(QThread):
         self.AGCJ30RH_TAPE_CENTER_model = YOLO("./aikensa/models/AGCJ30RH/TAPE/AGCJ30RH_TAPE_CENTER_DETECTION.pt")
 
         self.arucoClassificer_model = YOLO("./aikensa/models/ARUCO/aruco.pt")
+        self.models_initialized = True
+
+    def ensure_models_initialized(self):
+        if self.models_initialized:
+            return
+
+        start_time = time.perf_counter()
+        logger.info("Initializing inspection models on first inspection request")
+        self.initialize_model()
+        logger.info("Inspection models initialized in %.2f seconds", time.perf_counter() - start_time)
+
+    def _inspection_command_pending(self) -> bool:
+        return (
+            self.inspection_config.widget in [5, 6, 7, 8]
+            and (
+                self.InstructionCode_modbus in [1, 2, 3]
+                or self.inspection_config.doInspection is True
+                or self.inspection_config.doTapeInspection is True
+            )
+        )
 
 
     def stop(self):
@@ -2720,8 +1315,8 @@ class InspectionThread(QThread):
         )
 
         if any_adjust:
-            cur = cfg.current_numofPart[w]
-            today = cfg.today_numofPart[w]
+            cur = self._get_display_current_counts(w)
+            today = self._get_display_today_counts(w)
             new_cur, new_today = self.manual_adjustment(
                 cur, today,
                 cfg.furyou_plus,
@@ -2733,22 +1328,28 @@ class InspectionThread(QThread):
                 cfg.kansei_plus_10,
                 cfg.kansei_minus_10,
             )
+
+            self.current_counter_offsets[w] = [
+                int(new_cur[0]) - int(self.currentLot_NOP[0]),
+                int(new_cur[1]) - int(self.currentLot_NOP[1]),
+            ]
+            self.today_counter_offsets[w] = [
+                int(new_today[0]) - int(self.todayPart_NOP[0]),
+                int(new_today[1]) - int(self.todayPart_NOP[1]),
+            ]
             cfg.current_numofPart[w], cfg.today_numofPart[w] = new_cur, new_today
             print("Manual Adjustment Done")
 
         if cfg.counterReset is True:
+            current_display = self._get_display_current_counts(w)
+            self.current_counter_offsets[w] = [
+                -int(self.currentLot_NOP[0]),
+                -int(self.currentLot_NOP[1]),
+            ]
             cfg.current_numofPart[w] = [0, 0]
+            cfg.today_numofPart[w] = self._get_display_today_counts(w)
             cfg.counterReset = False
-            self.save_result_database(
-                partname=self.widget_dir_map[w],
-                numofPart=cfg.today_numofPart[w],
-                currentnumofPart=[0, 0],
-                deltaTime=0.0,
-                kensainName=cfg.kensainNumber,
-                status="COUNTERRESET",
-                NGreason="COUNTERRESET",
-                PPMS="COUNTERRESET",
-            )
+            print(f"Counter reset applied for widget {w}: {current_display} -> [0, 0]")
 
     def crop_part(self, image, attr_name: str, out_w: int = 512, out_h: int = 512):
         """

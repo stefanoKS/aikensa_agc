@@ -394,12 +394,18 @@ class InspectionThread(QThread):
             color=True,
             exposure_us=15000, gain_db=10, wb_temperature=6500,
             auto_exposure=False, auto_gain=False, auto_wb=False,
-            first_frame_timeout_ms=200)
+            first_frame_timeout_ms=2000)
 
         if not self.cap_cam_ic4.isOpened():
             print("Failed to open IC4 camera ")
             self.cap_cam_ic4 = None
         else:
+            if hasattr(self.cap_cam_ic4, "recommended_timeout_ms"):
+                self.camera_read_timeout_ms = self.cap_cam_ic4.recommended_timeout_ms()
+            else:
+                fps = self.cap_cam_ic4.get(cv2.CAP_PROP_FPS)
+                if fps and fps > 0:
+                    self.camera_read_timeout_ms = max(1000, int(np.ceil((1000.0 / fps) * 3)))
             print("Initialized IC4 camera ")
 
     def release_camera(self):

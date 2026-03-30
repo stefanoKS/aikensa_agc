@@ -1,0 +1,15 @@
+# Use a quoted string for a camera serial/model match.
+# Use an unquoted integer to select by camera index.
+inspection:
+  camera_id_or_serial: "37420968"
+  width: 3072
+  height: 2048
+  fps: 25
+  color: true
+  exposure_us: 15000
+  gain_db: 10
+  wb_temperature: 6500
+  auto_exposure: false
+  auto_gain: false
+  auto_wb: false
+  first_frame_timeout_ms: 2000

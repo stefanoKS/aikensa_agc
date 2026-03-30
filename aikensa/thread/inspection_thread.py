@@ -328,7 +328,9 @@ class InspectionThread(QThread):
             self.mysqlHostPort = credentials["port"]
 
         self.holding_register_path = "./aikensa/modbus/holding_register_map.yaml"
+        self.ic4_camera_config_path = "./aikensa/cameraconfig/ic4_camera.yaml"
         self.widget_inspection_config_path = "./aikensa/parts_config/AGC/widget_inspection_config.yaml"
+        self.ic4_camera_config = self.load_ic4_camera_config(self.ic4_camera_config_path)
         self.widget_inspection_configs = self.load_widget_inspection_config(self.widget_inspection_config_path)
         self.command_pause_ms = 150
         self.holding_register_map = load_register_map(self.holding_register_path)
@@ -388,13 +390,32 @@ class InspectionThread(QThread):
 
 
     def initialize_single_camera(self, camID):
+        if getattr(self, "cap_cam_ic4", None) is not None:
+            self.cap_cam_ic4.release()
+            self.cap_cam_ic4 = None
 
-        self.cap_cam_ic4 = initialize_camera_ic4("37420968",
-            width=3072, height=2048, fps=25,
-            color=True,
-            exposure_us=15000, gain_db=10, wb_temperature=6500,
-            auto_exposure=False, auto_gain=False, auto_wb=False,
-            first_frame_timeout_ms=2000)
+        self.ic4_camera_config = self.load_ic4_camera_config(self.ic4_camera_config_path)
+        camera_id_or_serial = self.ic4_camera_config.get("camera_id_or_serial")
+        if camera_id_or_serial is None:
+            if camID not in (None, -1):
+                camera_id_or_serial = camID
+            else:
+                camera_id_or_serial = "37420968"
+
+        self.cap_cam_ic4 = initialize_camera_ic4(
+            camera_id_or_serial,
+            width=int(self.ic4_camera_config.get("width", 3072)),
+            height=int(self.ic4_camera_config.get("height", 2048)),
+            fps=float(self.ic4_camera_config.get("fps", 25)),
+            color=bool(self.ic4_camera_config.get("color", True)),
+            exposure_us=self.ic4_camera_config.get("exposure_us", 15000),
+            gain_db=self.ic4_camera_config.get("gain_db", 10),
+            wb_temperature=self.ic4_camera_config.get("wb_temperature", 6500),
+            auto_exposure=bool(self.ic4_camera_config.get("auto_exposure", False)),
+            auto_gain=bool(self.ic4_camera_config.get("auto_gain", False)),
+            auto_wb=bool(self.ic4_camera_config.get("auto_wb", False)),
+            first_frame_timeout_ms=int(self.ic4_camera_config.get("first_frame_timeout_ms", 2000)),
+        )
 
         if not self.cap_cam_ic4.isOpened():
             print("Failed to open IC4 camera ")
@@ -406,9 +427,14 @@ class InspectionThread(QThread):
                 fps = self.cap_cam_ic4.get(cv2.CAP_PROP_FPS)
                 if fps and fps > 0:
                     self.camera_read_timeout_ms = max(1000, int(np.ceil((1000.0 / fps) * 3)))
-            print("Initialized IC4 camera ")
+            print(f"Initialized IC4 camera using '{camera_id_or_serial}'")
 
     def release_camera(self):
+        if getattr(self, "cap_cam_ic4", None) is not None:
+            self.cap_cam_ic4.release()
+            self.cap_cam_ic4 = None
+            print("IC4 camera released.")
+
         if self.cap_cam is not None:
             self.cap_cam.release()
             self.cap_cam = None
@@ -504,11 +530,9 @@ class InspectionThread(QThread):
 
             if self.inspection_config.widget in [0, 5, 6, 7, 8]:
                 ok, self.camFrame_ic4 = self.cap_cam_ic4.read(timeout_ms=self.camera_read_timeout_ms)
-                if self.camFrame_ic4 is None:
+                if not ok or self.camFrame_ic4 is None:
                     continue
                 # self.camFrame_ic4 = cv2.rotate(self.camFrame_ic4, cv2.ROTATE_180)
-                #invert rgb to bgr
-                self.camFrame_ic4 = cv2.cvtColor(self.camFrame_ic4, cv2.COLOR_BGR2RGB)
             widget_config = self.widget_inspection_configs.get(self.inspection_config.widget)
             if widget_config is not None:
                 if self.process_widget_inspection(widget_config):
@@ -687,6 +711,17 @@ class InspectionThread(QThread):
             widget_configs[normalized["widget"]] = normalized
 
         return widget_configs
+
+    def load_ic4_camera_config(self, yaml_path: str) -> dict:
+        abs_path = self._resolve_yaml_path(yaml_path)
+        with open(abs_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        inspection_config = dict(data.get("inspection") or {})
+        if not inspection_config:
+            return {}
+
+        return inspection_config
 
     def _get_current_part_crops(self) -> list:
         return [self.part1Crop, self.part2Crop, self.part3Crop, self.part4Crop, self.part5Crop]

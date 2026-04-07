@@ -333,7 +333,9 @@ def evaluate_sides_and_annotate(result: JXXResult,
                                 dx_range_right: Tuple[float, float],
                                 min_conf: float = 0.0,
                                 draw_text: bool = True,
-                                debug_mode: bool = DEBUG_MODE) -> Dict[str, Dict[str, Any]]:
+                                debug_mode: bool = DEBUG_MODE,
+                                bypass_left: bool = False,
+                                bypass_right: bool = False) -> Dict[str, Dict[str, Any]]:
     """
     For each side:
       - Compute signed Δx = x(cls1) - x(cls0) between best class-1 and class-0.
@@ -342,7 +344,7 @@ def evaluate_sides_and_annotate(result: JXXResult,
     """
     out: Dict[str, Dict[str, Any]] = {}
 
-    def _check(det: TileDetResult, rng: Tuple[float, float], tag: str):
+    def _check(det: TileDetResult, rng: Tuple[float, float], tag: str, bypass_ok: bool):
         low, high = float(rng[0]), float(rng[1])
         p0 = _best_detection_xy_for_class(det, 0, min_conf=min_conf)
         p1 = _best_detection_xy_for_class(det, 1, min_conf=min_conf)
@@ -355,7 +357,7 @@ def evaluate_sides_and_annotate(result: JXXResult,
             ok = (low <= dx <= high)
 
         # DEBUG override
-        if debug_mode:
+        if debug_mode or bypass_ok:
             ok = True
 
         color = (0, 255, 0) if ok else (0, 0, 255)
@@ -367,15 +369,15 @@ def evaluate_sides_and_annotate(result: JXXResult,
                 label = f"{tag} OK" if ok else f"{tag} NG"
                 # label = f"OK" if ok else f"NG"
             else:
-                label = f"{tag}: MISSING" if not debug_mode else f"{tag} OK"
+                label = f"{tag}: MISSING" if not (debug_mode or bypass_ok) else f"{tag} OK"
                 # label = f"MISSING" if not debug_mode else f"OK"
             cv2.putText(result.annotated_bgr, label, (x + 9, max(50, y + 25)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
 
-        return {"dx": dx, "ok": ok, "classes_found": classes_found, "range": (low, high)}
+        return {"dx": dx, "ok": ok, "classes_found": classes_found, "range": (low, high), "bypassed": bool(bypass_ok)}
 
-    out["left"]  = _check(result.left,  dx_range_left,  "LEFT")
-    out["right"] = _check(result.right, dx_range_right, "RIGHT")
+    out["left"]  = _check(result.left,  dx_range_left,  "LEFT", bypass_left)
+    out["right"] = _check(result.right, dx_range_right, "RIGHT", bypass_right)
     return out
 
 # =========================
@@ -401,6 +403,7 @@ def _evaluate_center_tile_classification(model_center: Any,
                                          annotated_bgr: Optional[np.ndarray] = None,
                                          draw: bool = True,
                                          debug_mode: bool = DEBUG_MODE,
+                                         bypass_ok: bool = False,
                                          yolo_imgsz: int = 256) -> Dict[str, Any]:
     """
     Pads each center tile and runs Ultralytics classification.
@@ -432,13 +435,13 @@ def _evaluate_center_tile_classification(model_center: Any,
                 confidence = None
 
     ok = predicted_class == int(ok_class)
-    if debug_mode:
+    if debug_mode or bypass_ok:
         ok = True
 
     h, w = tile_bgr.shape[:2]
     gx1, gy1 = ox, oy
     gx2, gy2 = ox + w, oy + h
-    label = _center_class_label(predicted_class)
+    label = "OK" if (debug_mode or bypass_ok) else _center_class_label(predicted_class)
 
     if draw and annotated_bgr is not None:
         color = (0, 255, 0) if ok else (0, 0, 255)
@@ -454,6 +457,7 @@ def _evaluate_center_tile_classification(model_center: Any,
         "score": confidence,
         "cls": predicted_class,
         "label": label,
+        "bypassed": bool(bypass_ok),
     }
 
 
@@ -470,6 +474,7 @@ def _scan_center_strip(annotated_bgr: np.ndarray,
                        pad: Tuple[int,int,int,int]=(0,0,0,0),
                        draw_ok_green: bool = True,
                        debug_mode: bool = DEBUG_MODE,
+                       bypass_center: bool = False,
                        yolo_imgsz: int = 384
                        ) -> List[Dict[str, Any]]:
     """
@@ -497,6 +502,7 @@ def _scan_center_strip(annotated_bgr: np.ndarray,
             annotated_bgr=annotated_bgr,
             draw=True,
             debug_mode=debug_mode,
+            bypass_ok=bypass_center,
             yolo_imgsz=yolo_imgsz
         )
         r["roi_xywh"] = roi
@@ -548,7 +554,10 @@ def JXX_Check(img_bgr: np.ndarray,
               center_pad: Tuple[int,int,int,int] = CENTER_PAD,
               center_draw_ok_green: bool = True,
               # --- debug override (optional) ---
-              debug_mode: Optional[bool] = None
+              debug_mode: Optional[bool] = None,
+              bypass_left: bool = False,
+              bypass_right: bool = False,
+              bypass_center: bool = False
               ) -> Tuple[np.ndarray, bool, Dict[str, Any]]:
     """
     Unified pipeline:
@@ -632,7 +641,9 @@ def JXX_Check(img_bgr: np.ndarray,
         dx_range_right=dx_range_right,
         min_conf=yolo_conf,
         draw_text=True,
-        debug_mode=dbg
+        debug_mode=dbg,
+        bypass_left=bypass_left,
+        bypass_right=bypass_right,
     )
     print(f"Evaluation L/R: {eval_lr}")
     # 6) Center scanning (optional; respect debug)
@@ -652,6 +663,7 @@ def JXX_Check(img_bgr: np.ndarray,
             pad=center_pad,
             draw_ok_green=center_draw_ok_green,
             debug_mode=dbg,
+            bypass_center=bypass_center,
             yolo_imgsz = yolo_imgsz_center
         )
 
@@ -663,5 +675,14 @@ def JXX_Check(img_bgr: np.ndarray,
         centers_ok = all(w.get("ok", False) for w in center_windows) if center_windows else (not enable_center)
         overall_ok = lr_ok and centers_ok
 
-    details = {"eval_lr": eval_lr, "center_windows": center_windows, "debug_mode": dbg}
+    details = {
+        "eval_lr": eval_lr,
+        "center_windows": center_windows,
+        "debug_mode": dbg,
+        "bypass": {
+            "left": bool(bypass_left),
+            "right": bool(bypass_right),
+            "center": bool(bypass_center),
+        },
+    }
     return result.annotated_bgr, overall_ok, details

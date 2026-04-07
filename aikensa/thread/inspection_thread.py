@@ -73,6 +73,11 @@ class InspectionConfig:
     debug_mode_selection: str = None
 
     debug_mode: bool = False
+    debug_bypass_set_left: bool = False
+    debug_bypass_set_right: bool = False
+    debug_bypass_tape_left: bool = False
+    debug_bypass_tape_center: bool = False
+    debug_bypass_tape_right: bool = False
 
 class InspectionThread(QThread):
     part1Cam = pyqtSignal(QImage)
@@ -802,6 +807,47 @@ class InspectionThread(QThread):
 
         return resolved_models
 
+    def _get_phase_bypass_config(self, phase_name: str) -> dict:
+        if phase_name == "set":
+            return {
+                "bypass_left": bool(self.inspection_config.debug_bypass_set_left),
+                "bypass_right": bool(self.inspection_config.debug_bypass_set_right),
+                "bypass_center": False,
+            }
+
+        return {
+            "bypass_left": bool(self.inspection_config.debug_bypass_tape_left),
+            "bypass_right": bool(self.inspection_config.debug_bypass_tape_right),
+            "bypass_center": bool(self.inspection_config.debug_bypass_tape_center),
+        }
+
+    def _is_full_phase_bypass(self, phase_name: str) -> bool:
+        phase_bypass = self._get_phase_bypass_config(phase_name)
+        if phase_name == "set":
+            return phase_bypass["bypass_left"] and phase_bypass["bypass_right"]
+
+        return (
+            phase_bypass["bypass_left"]
+            and phase_bypass["bypass_right"]
+            and phase_bypass["bypass_center"]
+        )
+
+    def _build_phase_statuses(self, phase_name: str, detection_ids: list, ok_ids: list) -> list:
+        ok_label = "セット OK" if phase_name == "set" else "テープ OK"
+        ng_label = "セット NG" if phase_name == "set" else "テープ NG"
+        full_bypass = self._is_full_phase_bypass(phase_name)
+
+        statuses = []
+        for detected, ok in zip(detection_ids, ok_ids):
+            if int(detected) == 1 and not full_bypass:
+                statuses.append("製品未検出")
+            elif int(ok) == 1:
+                statuses.append(ok_label)
+            else:
+                statuses.append(ng_label)
+
+        return statuses
+
     def _run_phase_checks(self, phase_name: str, phase_config: dict) -> tuple[list, list, list]:
         parts = self._get_current_part_crops()
         part_count = len(parts)
@@ -823,6 +869,7 @@ class InspectionThread(QThread):
             check_kwargs["center_ok_class"] = check_kwargs.pop("center_class_id")
         check_kwargs.pop("center_bbox_height_range", None)
         check_kwargs["debug_mode"] = self.debug
+        check_kwargs.update(self._get_phase_bypass_config(phase_name))
         model_kwargs = self._resolve_phase_models(phase_config)
 
         for index, crop in enumerate(parts):
@@ -846,10 +893,17 @@ class InspectionThread(QThread):
 
         return corrected_images, detection_ids, ok_ids
 
-    def _finalize_phase_results(self, detection_ids: list, ok_ids: list) -> tuple[list, list, list]:
+    def _finalize_phase_results(self, phase_name: str, detection_ids: list, ok_ids: list) -> tuple[list, list, list]:
         detection_result = [int(value) for value in reversed(detection_ids)]
         ok_result = [int(value) for value in reversed(ok_ids)]
         ng_result = [1 - value for value in ok_result]
+        full_bypass = self._is_full_phase_bypass(phase_name)
+
+        if full_bypass:
+            detection_result = [0] * len(detection_result)
+            ok_result = [1] * len(ok_result)
+            ng_result = [0] * len(ng_result)
+            return detection_result, ok_result, ng_result
 
         for index, detected in enumerate(detection_result):
             if detected == 1:
@@ -893,16 +947,29 @@ class InspectionThread(QThread):
             self.requestModbusWrite.emit(self.holding_register_map["return_pallet_Error"], [self.InspectionResult_Tray_NG])
         self.requestModbusWrite.emit(self.holding_register_map["return_state_code"], [2])
 
-    def _save_inspection_images(self, widget_config: dict, phase: str, images: list, ok_results: list, ng_results: list) -> None:
+    def _save_inspection_images(
+        self,
+        widget_config: dict,
+        phase: str,
+        raw_images: list,
+        result_images: list,
+        ok_results: list,
+        ng_results: list,
+    ) -> None:
         timestamp = datetime.now()
         date_dir = timestamp.strftime("%Y%m%d")
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S_%f")
-        part_name = widget_config["part_name"]
+        widget_dir = self.widget_dir_map.get(
+            int(widget_config["widget"]),
+            widget_config.get("part_name", "unknown_part"),
+        )
         lot_number = str(self.current_LotNumber or "NOLOT")
         serial_number = str(self.current_SerialNumber or "NOSERIAL")
 
-        for index, image in enumerate(images):
-            if image is None:
+        for index, raw_image in enumerate(raw_images):
+            result_image = result_images[index] if index < len(result_images) else None
+
+            if raw_image is None and result_image is None:
                 continue
 
             is_ok = index < len(ok_results) and int(ok_results[index]) == 1
@@ -915,21 +982,37 @@ class InspectionThread(QThread):
             else:
                 continue
 
-            save_dir = os.path.join(
+            base_dir = os.path.join(
                 "./aikensa/inspection_results",
-                part_name,
+                widget_dir,
                 date_dir,
                 phase,
                 result_dir,
-                f"part{index + 1}",
             )
-            os.makedirs(save_dir, exist_ok=True)
-            filename = os.path.join(
-                save_dir,
-                f"{timestamp_str}_lot-{lot_number}_serial-{serial_number}.jpg",
+            raw_dir = os.path.join(base_dir, "nama")
+            processed_dir = os.path.join(base_dir, "kekka")
+            os.makedirs(raw_dir, exist_ok=True)
+            os.makedirs(processed_dir, exist_ok=True)
+
+            status_text = "OK" if is_ok else "NG"
+            status_color = (0, 220, 0) if is_ok else (220, 0, 0)
+
+            raw_to_save = raw_image if raw_image is not None else result_image.copy()
+            result_to_save = result_image.copy() if result_image is not None else raw_to_save.copy()
+            result_to_save = self.draw_status_text_PIL(
+                result_to_save,
+                status_text,
+                status_color,
+                size="normal",
             )
-            cv2.imwrite(filename, image)
-            print(f"Saved {filename}")
+
+            filename = f"{timestamp_str}_part{index + 1}_lot-{lot_number}_serial-{serial_number}.jpg"
+            raw_filename = os.path.join(raw_dir, filename)
+            result_filename = os.path.join(processed_dir, filename)
+            cv2.imwrite(raw_filename, raw_to_save)
+            cv2.imwrite(result_filename, result_to_save)
+            print(f"Saved {raw_filename}")
+            print(f"Saved {result_filename}")
 
     def _refresh_current_lot_totals(self, widget: int) -> None:
         if not self.current_LotNumber:
@@ -1024,7 +1107,8 @@ class InspectionThread(QThread):
         self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
         self._pause_for_plc()
 
-        self.InspectionResult_DetectionID, self.InspectionResult_SetID_OK, self.InspectionResult_SetID_NG = self._finalize_phase_results(detection_ids, ok_ids)
+        self.InspectionResult_DetectionID, self.InspectionResult_SetID_OK, self.InspectionResult_SetID_NG = self._finalize_phase_results("set", detection_ids, ok_ids)
+        self.InspectionStatus = self._build_phase_statuses("set", detection_ids, ok_ids)
         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
         self.InspectionResult_SetID_OK_int = list_to_16bit_int(self.InspectionResult_SetID_OK)
         self.InspectionResult_SetID_NG_int = list_to_16bit_int(self.InspectionResult_SetID_NG)
@@ -1038,6 +1122,7 @@ class InspectionThread(QThread):
             widget_config,
             "set",
             self.SetCorrectInspectionImages,
+            self.SetCorrectInspectionImages_result,
             self.InspectionResult_SetID_OK,
             self.InspectionResult_SetID_NG,
         )
@@ -1075,7 +1160,8 @@ class InspectionThread(QThread):
         self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
         self._pause_for_plc()
 
-        self.InspectionResult_DetectionID, self.InspectionResult_TapeID_OK, self.InspectionResult_TapeID_NG = self._finalize_phase_results(detection_ids, ok_ids)
+        self.InspectionResult_DetectionID, self.InspectionResult_TapeID_OK, self.InspectionResult_TapeID_NG = self._finalize_phase_results("tape", detection_ids, ok_ids)
+        self.InspectionStatus = self._build_phase_statuses("tape", detection_ids, ok_ids)
         self.InspectionResult_DetectionID_int = list_to_16bit_int(self.InspectionResult_DetectionID)
         self.InspectionResult_TapeID_OK_int = list_to_16bit_int(self.InspectionResult_TapeID_OK)
         self.InspectionResult_TapeID_NG_int = list_to_16bit_int(self.InspectionResult_TapeID_NG)
@@ -1091,6 +1177,7 @@ class InspectionThread(QThread):
             widget_config,
             phase_dir,
             self.TapeCorrectInspectionImages,
+            self.TapeCorrectInspectionImages_result,
             self.InspectionResult_TapeID_OK,
             self.InspectionResult_TapeID_NG,
         )
@@ -1437,6 +1524,7 @@ class InspectionThread(QThread):
     def _reset_inspection_results(self):
         """Reset all inspection result arrays to zeros and cache their 16-bit ints."""
         zeros = [0] * 5
+        self.InspectionStatus = [None] * 5
         # raw arrays
         self.InspectionResult_DetectionID = zeros.copy()
         self.InspectionResult_SetID_OK    = zeros.copy()

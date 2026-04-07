@@ -1423,8 +1423,8 @@ Tape Inspection</string>
    <widget class="QRadioButton" name="debug_mode_radio">
     <property name="geometry">
      <rect>
-      <x>1740</x>
-      <y>860</y>
+      <x>1700</x>
+      <y>840</y>
       <width>51</width>
       <height>21</height>
      </rect>
@@ -1444,8 +1444,8 @@ Tape Inspection</string>
    <widget class="QComboBox" name="comboSelection_ONOFF">
     <property name="geometry">
      <rect>
-      <x>1740</x>
-      <y>880</y>
+      <x>1700</x>
+      <y>860</y>
       <width>51</width>
       <height>31</height>
      </rect>
@@ -1612,6 +1612,124 @@ Tape Inspection</string>
      <set>Qt::AlignCenter</set>
     </property>
    </widget>
+   <widget class="QWidget" name="gridLayoutWidget">
+    <property name="geometry">
+     <rect>
+      <x>330</x>
+      <y>850</y>
+      <width>160</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <layout class="QGridLayout" name="gridLayout">
+     <item row="1" column="0">
+      <widget class="QRadioButton" name="SET_L">
+             <property name="autoExclusive">
+                <bool>false</bool>
+             </property>
+       <property name="text">
+        <string>L</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="0">
+      <widget class="QLabel" name="label_18">
+       <property name="font">
+        <font>
+         <family>Ubuntu Mono</family>
+         <pointsize>8</pointsize>
+         <weight>50</weight>
+         <bold>false</bold>
+         <underline>false</underline>
+        </font>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">color: rgb(238, 238, 236);</string>
+       </property>
+       <property name="text">
+        <string>SET</string>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignCenter</set>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="2">
+      <widget class="QRadioButton" name="SET_R">
+             <property name="autoExclusive">
+                <bool>false</bool>
+             </property>
+       <property name="text">
+        <string>R</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+   <widget class="QWidget" name="gridLayoutWidget_2">
+    <property name="geometry">
+     <rect>
+      <x>500</x>
+      <y>850</y>
+      <width>151</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <layout class="QGridLayout" name="gridLayout_2">
+     <item row="1" column="2">
+      <widget class="QRadioButton" name="TAPE_R">
+             <property name="autoExclusive">
+                <bool>false</bool>
+             </property>
+       <property name="text">
+        <string>R</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QRadioButton" name="TAPE_L">
+             <property name="autoExclusive">
+                <bool>false</bool>
+             </property>
+       <property name="text">
+        <string>L</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="0">
+      <widget class="QLabel" name="label_19">
+       <property name="font">
+        <font>
+         <family>Ubuntu Mono</family>
+         <pointsize>8</pointsize>
+         <weight>50</weight>
+         <bold>false</bold>
+         <underline>false</underline>
+        </font>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">color: rgb(238, 238, 236);</string>
+       </property>
+       <property name="text">
+        <string>TAPE</string>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignCenter</set>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QRadioButton" name="TAPE_C">
+             <property name="autoExclusive">
+                <bool>false</bool>
+             </property>
+       <property name="text">
+        <string>C</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
    <zorder>label_12</zorder>
    <zorder>line_1</zorder>
    <zorder>line_2</zorder>
@@ -1662,6 +1780,8 @@ Tape Inspection</string>
    <zorder>frame</zorder>
    <zorder>label_17</zorder>
    <zorder>PLC_STATUS_label</zorder>
+   <zorder>gridLayoutWidget</zorder>
+   <zorder>gridLayoutWidget_2</zorder>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">

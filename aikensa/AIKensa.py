@@ -168,6 +168,11 @@ class AIKensa(QMainWindow):
             self.connect_line_edit_text_changed(widget_index=i, line_edit_name="kensain_name", inspection_param="kensainNumber")
             self.connect_QComboBox_changed(widget_index=i, combo_name="comboSelection", inspection_param="manual_part_selection")
             self.connect_QComboBox_changed(widget_index=i, combo_name="comboSelection_ONOFF", inspection_param="debug_mode_selection")
+            self.connect_radio_button_toggle(widget_index=i, radio_name="SET_L", inspection_param="debug_bypass_set_left")
+            self.connect_radio_button_toggle(widget_index=i, radio_name="SET_R", inspection_param="debug_bypass_set_right")
+            self.connect_radio_button_toggle(widget_index=i, radio_name="TAPE_L", inspection_param="debug_bypass_tape_left")
+            self.connect_radio_button_toggle(widget_index=i, radio_name="TAPE_C", inspection_param="debug_bypass_tape_center")
+            self.connect_radio_button_toggle(widget_index=i, radio_name="TAPE_R", inspection_param="debug_bypass_tape_right")
 
         for i in range(self.stackedWidget.count()):
             widget = self.stackedWidget.widget(i)
@@ -353,6 +358,20 @@ class AIKensa(QMainWindow):
 
     def _set_inspection_params(self, thread, key, value):
         setattr(thread.inspection_config, key, value)
+
+    def connect_radio_button_toggle(self, widget_index, radio_name, inspection_param):
+        widget = self.stackedWidget.widget(widget_index)
+        radio = widget.findChild(QRadioButton, radio_name)
+        if not radio:
+            return
+
+        radio.setAutoExclusive(False)
+        self._set_inspection_params(self.inspection_thread, inspection_param, radio.isChecked())
+        radio.toggled.connect(
+            lambda checked,
+                thread=self.inspection_thread,
+                param=inspection_param: self._set_inspection_params(thread, param, checked)
+        )
 
     def connect_line_edit_text_changed(self, widget_index, line_edit_name, inspection_param):
         widget = self.stackedWidget.widget(widget_index)

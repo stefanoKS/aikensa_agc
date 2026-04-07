@@ -1624,9 +1624,6 @@ Tape Inspection</string>
     <layout class="QGridLayout" name="gridLayout">
      <item row="1" column="0">
       <widget class="QRadioButton" name="SET_L">
-             <property name="autoExclusive">
-                <bool>false</bool>
-             </property>
        <property name="text">
         <string>L</string>
        </property>
@@ -1656,9 +1653,6 @@ Tape Inspection</string>
      </item>
      <item row="1" column="2">
       <widget class="QRadioButton" name="SET_R">
-             <property name="autoExclusive">
-                <bool>false</bool>
-             </property>
        <property name="text">
         <string>R</string>
        </property>
@@ -1678,9 +1672,6 @@ Tape Inspection</string>
     <layout class="QGridLayout" name="gridLayout_2">
      <item row="1" column="2">
       <widget class="QRadioButton" name="TAPE_R">
-             <property name="autoExclusive">
-                <bool>false</bool>
-             </property>
        <property name="text">
         <string>R</string>
        </property>
@@ -1688,9 +1679,6 @@ Tape Inspection</string>
      </item>
      <item row="1" column="0">
       <widget class="QRadioButton" name="TAPE_L">
-             <property name="autoExclusive">
-                <bool>false</bool>
-             </property>
        <property name="text">
         <string>L</string>
        </property>
@@ -1720,15 +1708,50 @@ Tape Inspection</string>
      </item>
      <item row="1" column="1">
       <widget class="QRadioButton" name="TAPE_C">
-             <property name="autoExclusive">
-                <bool>false</bool>
-             </property>
        <property name="text">
         <string>C</string>
        </property>
       </widget>
      </item>
     </layout>
+   </widget>
+   <widget class="QLabel" name="tray_emit_L">
+    <property name="geometry">
+     <rect>
+      <x>600</x>
+      <y>960</y>
+      <width>61</width>
+      <height>61</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">background-color: rgb(46, 52, 54);</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+   </widget>
+   <widget class="QLabel" name="tray_emit_R">
+    <property name="geometry">
+     <rect>
+      <x>690</x>
+      <y>960</y>
+      <width>61</width>
+      <height>61</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">background-color: rgb(46, 52, 54);</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
    </widget>
    <zorder>label_12</zorder>
    <zorder>line_1</zorder>
@@ -1782,6 +1805,8 @@ Tape Inspection</string>
    <zorder>PLC_STATUS_label</zorder>
    <zorder>gridLayoutWidget</zorder>
    <zorder>gridLayoutWidget_2</zorder>
+   <zorder>tray_emit_L</zorder>
+   <zorder>tray_emit_R</zorder>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">

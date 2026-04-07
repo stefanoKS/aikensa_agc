@@ -85,6 +85,8 @@ class AIKensa(QMainWindow):
         self.inspection_thread.part3Cam.connect(self._setPartFrame3)
         self.inspection_thread.part4Cam.connect(self._setPartFrame4)
         self.inspection_thread.part5Cam.connect(self._setPartFrame5)
+        self.inspection_thread.trayLeftCam.connect(self._setTrayEmitLeft)
+        self.inspection_thread.trayRightCam.connect(self._setTrayEmitRight)
 
         self.inspection_thread.current_numofPart_signal.connect(self._update_OKNG_label)
         self.inspection_thread.today_numofPart_signal.connect(self._update_todayOKNG_label)
@@ -300,6 +302,20 @@ class AIKensa(QMainWindow):
             widget = self.stackedWidget.widget(i)
             label5 = widget.findChild(QLabel, "FramePart5")
             label5.setPixmap(QPixmap.fromImage(image))
+
+    def _setTrayEmitLeft(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label = widget.findChild(QLabel, "tray_emit_L")
+            if label:
+                label.setPixmap(QPixmap.fromImage(image))
+
+    def _setTrayEmitRight(self, image):
+        for i in [5]:
+            widget = self.stackedWidget.widget(i)
+            label = widget.findChild(QLabel, "tray_emit_R")
+            if label:
+                label.setPixmap(QPixmap.fromImage(image))
 
     def _get_agc_widget(self):
         if not hasattr(self, "stackedWidget"):

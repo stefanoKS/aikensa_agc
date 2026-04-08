@@ -102,6 +102,7 @@ class InspectionThread(QThread):
 
     SerialNumber_signal = pyqtSignal(str)
     LotNumber_signal = pyqtSignal(str)
+    DailyPartsPerHour_signal = pyqtSignal(float)
 
     def __init__(self, inspection_config: InspectionConfig = None, modbus_thread=None):
         super(InspectionThread, self).__init__()
@@ -327,6 +328,9 @@ class InspectionThread(QThread):
         self.today_counter_offset_day = datetime.now().strftime("%Y%m%d")
         self.last_emitted_serial_number = None
         self.last_emitted_lot_number = None
+        self.last_emitted_daily_parts_per_hour = None
+        self.last_daily_parts_per_hour_day = None
+        self.daily_parts_per_hour = 0.0
         self.last_valid_serial_number = None
         self.last_valid_lot_number = None
         self.mysql_database_name = "aikensa_agc"
@@ -744,6 +748,7 @@ class InspectionThread(QThread):
 
     def run(self):
         self._initialize_sqlite_storage()
+        self._emit_daily_parts_per_hour(force=True)
         self._initialize_mysql_storage()
         try:
             print("Inspection Thread Started")
@@ -755,6 +760,7 @@ class InspectionThread(QThread):
 
 
             while self.running:
+                self._emit_daily_parts_per_hour_if_day_changed()
 
                 if self.inspection_config.debug_mode_selection == 1:
                     self.debug = True
@@ -1315,6 +1321,58 @@ class InspectionThread(QThread):
         ok_total, ng_total = self.cursor.fetchone()
         self.todayPart_NOP = [int(ok_total), int(ng_total)]
 
+    def _calculate_daily_parts_per_hour(self) -> float:
+        if self.cursor is None:
+            return 0.0
+
+        self.cursor.execute(
+            """
+            SELECT
+                COALESCE(SUM(ok_add + ng_add), 0),
+                MIN(timestamp),
+                MAX(timestamp)
+            FROM inspection_results
+            WHERE partName IN (5, 6, 7, 8)
+              AND DATE(timestamp) = DATE('now', 'localtime')
+            """
+        )
+        finished_parts, first_time_str, last_time_str = self.cursor.fetchone()
+        finished_parts = int(finished_parts or 0)
+
+        if finished_parts <= 0 or not first_time_str or not last_time_str:
+            return 0.0
+
+        try:
+            first_time = datetime.strptime(str(first_time_str), "%Y-%m-%d %H:%M:%S")
+            last_time = datetime.strptime(str(last_time_str), "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return 0.0
+
+        elapsed_hours = max((last_time - first_time).total_seconds() / 3600.0, 1 / 60)
+        if elapsed_hours <= 0:
+            return 0.0
+
+        return float(finished_parts / elapsed_hours)
+
+    def _emit_daily_parts_per_hour(self, force: bool = False) -> None:
+        current_day = datetime.now().strftime("%Y%m%d")
+        daily_parts_per_hour = round(self._calculate_daily_parts_per_hour(), 1)
+        self.daily_parts_per_hour = daily_parts_per_hour
+
+        if (
+            force
+            or current_day != self.last_daily_parts_per_hour_day
+            or daily_parts_per_hour != self.last_emitted_daily_parts_per_hour
+        ):
+            self.last_daily_parts_per_hour_day = current_day
+            self.last_emitted_daily_parts_per_hour = daily_parts_per_hour
+            self.DailyPartsPerHour_signal.emit(daily_parts_per_hour)
+
+    def _emit_daily_parts_per_hour_if_day_changed(self) -> None:
+        current_day = datetime.now().strftime("%Y%m%d")
+        if current_day != self.last_daily_parts_per_hour_day:
+            self._emit_daily_parts_per_hour(force=True)
+
     def _get_scoped_current_offset(self, widget: int) -> list[int]:
         current_lot = self.current_LotNumber or ""
         if self.current_counter_offset_lot.get(widget) != current_lot:
@@ -1359,6 +1417,7 @@ class InspectionThread(QThread):
             ng_add=ng_add,
         )
         self._refresh_current_lot_totals(widget)
+        self._emit_daily_parts_per_hour()
         self.prev_LotNumber = self.current_LotNumber
         self.prev_SerialNumber = self.current_SerialNumber
         self.temp_prev_OK = ok_add

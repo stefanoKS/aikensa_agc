@@ -46,6 +46,7 @@ class AIKensa(QMainWindow):
 
         self.inspection_thread.SerialNumber_signal.connect(self._update_serial_number)
         self.inspection_thread.LotNumber_signal.connect(self._update_lot_number)
+        self.inspection_thread.DailyPartsPerHour_signal.connect(self._update_jikan_atari)
         self.modbusThread.plcConnectionStatusChanged.connect(self._update_plc_status_label)
         self.modbusThread.start()
         self.inspection_thread.start()
@@ -65,6 +66,7 @@ class AIKensa(QMainWindow):
         self.timeMonitorThread.start()
 
         self._setup_ui()
+        self._update_jikan_atari(getattr(self.inspection_thread, "daily_parts_per_hour", 0.0))
 
         self.initial_colors = {}#store initial colors of the labels
 
@@ -341,14 +343,22 @@ class AIKensa(QMainWindow):
             widget = self.stackedWidget.widget(i)
             label = widget.findChild(QLabel, "tray_emit_L")
             if label:
-                label.setPixmap(QPixmap.fromImage(image))
+                scaled_pixmap = QPixmap.fromImage(image).scaled(
+                    label.width(), label.height(),
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                label.setPixmap(scaled_pixmap)
 
     def _setTrayEmitRight(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label = widget.findChild(QLabel, "tray_emit_R")
             if label:
-                label.setPixmap(QPixmap.fromImage(image))
+                scaled_pixmap = QPixmap.fromImage(image).scaled(
+                    label.width(), label.height(),
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                label.setPixmap(scaled_pixmap)
 
     def _setTapeFrame(self, image):
         """Display tape camera stream on TapeFrame QLabel."""
@@ -538,6 +548,15 @@ class AIKensa(QMainWindow):
         lot_label = widget.findChild(QLabel, "status_LOTNO")
         if lot_label:
             lot_label.setText(f"{lot_number}")
+
+    def _update_jikan_atari(self, parts_per_hour):
+        widget = self._get_agc_widget()
+        if not widget:
+            return
+
+        label = widget.findChild(QLabel, "JIKAN_ATARI")
+        if label:
+            label.setText(f"{float(parts_per_hour):.1f}")
 
     def _update_plc_status_label(self, connected: bool):
         widget = self._get_agc_widget()

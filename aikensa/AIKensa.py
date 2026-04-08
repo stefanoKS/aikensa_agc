@@ -438,7 +438,11 @@ class AIKensa(QMainWindow):
             return
 
         radio.setAutoExclusive(False)
-        self._set_inspection_params(self.inspection_thread, inspection_param, radio.isChecked())
+        initial_value = bool(getattr(self.inspection_thread.inspection_config, inspection_param, radio.isChecked()))
+        radio.blockSignals(True)
+        radio.setChecked(initial_value)
+        radio.blockSignals(False)
+        self._set_inspection_params(self.inspection_thread, inspection_param, initial_value)
         radio.toggled.connect(
             lambda checked,
                 thread=self.inspection_thread,

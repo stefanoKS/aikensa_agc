@@ -1,3 +1,10 @@
+defaults:
+  debug_bypass_set_left: false
+  debug_bypass_set_right: true
+  debug_bypass_tape_left: false
+  debug_bypass_tape_center: true
+  debug_bypass_tape_right: true
+
 widgets:
   5:
     part_name: J59JRH
@@ -209,7 +216,7 @@ widgets:
         trim_right: 0
         left_width: 256
         right_width: 256
-        dx_range_left: [8, 17]
+        dx_range_left: [-5, 20]
         dx_range_right: [3, 12]
         left_pad: [0, 0, 0, 0]
         right_pad: [0, 0, 0, 0]
@@ -232,7 +239,7 @@ widgets:
         trim_right: 0
         left_width: 256
         right_width: 256
-        dx_range_left: [2, 30]
+        dx_range_left: [-5, 35]
         dx_range_right: [-25, 2]
         yolo_conf: 0.3
         yolo_iou: 0.5
@@ -256,7 +263,7 @@ widgets:
         trim_right: 0
         left_width: 256
         right_width: 256
-        dx_range_left: [2, 30]
+        dx_range_left: [-5, 35]
         dx_range_right: [-25, 2]
         yolo_conf: 0.3
         yolo_iou: 0.5
@@ -344,7 +351,7 @@ widgets:
         trim_right: 0
         left_width: 256
         right_width: 256
-        dx_range_left: [0, 33]
+        dx_range_left: [-5, 35]
         dx_range_right: [-28, 1]
         yolo_conf: 0.1
         yolo_iou: 0.5

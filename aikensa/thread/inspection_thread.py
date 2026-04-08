@@ -354,6 +354,8 @@ class InspectionThread(QThread):
         self.widget_inspection_config_path = "./aikensa/parts_config/AGC/widget_inspection_config.yaml"
         self.ic4_camera_config = self.load_ic4_camera_config(self.ic4_camera_config_path)
         self.widget_inspection_configs = self.load_widget_inspection_config(self.widget_inspection_config_path)
+        self.inspection_defaults = self.load_inspection_defaults(self.widget_inspection_config_path)
+        self._apply_inspection_defaults()
         self.command_pause_ms = 150
         self.holding_register_map = load_register_map(self.holding_register_path)
         self.camera_angle = 180.65
@@ -981,6 +983,30 @@ class InspectionThread(QThread):
             widget_configs[normalized["widget"]] = normalized
 
         return widget_configs
+
+    def load_inspection_defaults(self, yaml_path: str) -> dict[str, bool]:
+        abs_path = self._resolve_yaml_path(yaml_path)
+        with open(abs_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        configured_defaults = dict(data.get("defaults") or {})
+        supported_defaults = (
+            "debug_bypass_set_left",
+            "debug_bypass_set_right",
+            "debug_bypass_tape_left",
+            "debug_bypass_tape_center",
+            "debug_bypass_tape_right",
+        )
+
+        return {
+            key: bool(configured_defaults.get(key, False))
+            for key in supported_defaults
+        }
+
+    def _apply_inspection_defaults(self) -> None:
+        for key, value in self.inspection_defaults.items():
+            if hasattr(self.inspection_config, key):
+                setattr(self.inspection_config, key, bool(value))
 
     def load_ic4_camera_config(self, yaml_path: str) -> dict:
         abs_path = self._resolve_yaml_path(yaml_path)

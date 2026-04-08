@@ -15,6 +15,7 @@ widgets:
         left: Tray_detection_left_down_crop
         right: Tray_detection_right_down_crop
       expected_ids: [6, 7]
+      skip_expected_id_check: true
       mismatch_ng:
         1: 1
         2: 1
@@ -102,6 +103,7 @@ widgets:
         left: Tray_detection_left_crop
         right: Tray_detection_right_crop
       expected_ids: [4, 5]
+      skip_expected_id_check: true
       mismatch_ng:
         1: 1
         2: 1
@@ -189,6 +191,7 @@ widgets:
         left: Tray_detection_left_down_crop
         right: Tray_detection_right_down_crop
       expected_ids: [2, 3]
+      skip_expected_id_check: true
       mismatch_ng:
         1: 0
         2: 1
@@ -277,6 +280,7 @@ widgets:
         left: Tray_detection_left_crop
         right: Tray_detection_right_crop
       expected_ids: [0, 1]
+      skip_expected_id_check: tue
       mismatch_ng:
         1: 0
         2: 0
@@ -293,8 +297,8 @@ widgets:
         trim_right: 0
         left_width: 256
         right_width: 256
-        dx_range_left: [8, 17]
-        dx_range_right: [3, 12]
+        dx_range_left: [-5, 20]
+        dx_range_right: [-15, 15]
         left_pad: [0, 0, 0, 0]
         right_pad: [0, 0, 0, 0]
         yolo_imgsz_side: 384
@@ -316,8 +320,8 @@ widgets:
         trim_right: 0
         left_width: 256
         right_width: 256
-        dx_range_left: [2, 30]
-        dx_range_right: [-25, -2]
+        dx_range_left: [-5, 35]
+        dx_range_right: [-28, 0]
         yolo_conf: 0.1
         yolo_iou: 0.5
         center_ok_class: 0
@@ -340,8 +344,8 @@ widgets:
         trim_right: 0
         left_width: 256
         right_width: 256
-        dx_range_left: [2, 30]
-        dx_range_right: [-25, -2]
+        dx_range_left: [0, 33]
+        dx_range_right: [-28, 1]
         yolo_conf: 0.1
         yolo_iou: 0.5
         center_ok_class: 0

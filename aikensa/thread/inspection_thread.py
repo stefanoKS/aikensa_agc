@@ -85,6 +85,7 @@ class InspectionThread(QThread):
     part3Cam = pyqtSignal(QImage)
     part4Cam = pyqtSignal(QImage)
     part5Cam = pyqtSignal(QImage)
+
     trayLeftCam = pyqtSignal(QImage)
     trayRightCam = pyqtSignal(QImage)
 
@@ -332,15 +333,7 @@ class InspectionThread(QThread):
             self.mysqlID = credentials["id"]
             self.mysqlPassword = credentials["pass"]
             self.mysqlHost = credentials["host"]
-            self.mysqlHostPort = int(credentials["port"])
-            self.mysqlDatabase = credentials.get("database", "aikensa_agc")
-            self.mysqlConnectionTimeout = int(credentials.get("connection_timeout", 5))
-
-        self.conn = None
-        self.cursor = None
-        self.mysql_conn = None
-        self.mysql_cursor = None
-        self.mysql_enabled = False
+            self.mysqlHostPort = credentials["port"]
 
         self.holding_register_path = "./aikensa/modbus/holding_register_map.yaml"
         self.ic4_camera_config_path = "./aikensa/cameraconfig/ic4_camera.yaml"
@@ -460,7 +453,8 @@ class InspectionThread(QThread):
             self.cap_cam0 = None
             print("Camera 0 released.")
 
-    def _initialize_sqlite_database(self) -> None:
+    def run(self):
+
         db_dir = "./aikensa/inspection_results"
         os.makedirs(db_dir, exist_ok=True)
 
@@ -469,182 +463,39 @@ class InspectionThread(QThread):
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
 
+        # good defaults for app usage
         self.cursor.execute("PRAGMA journal_mode=WAL;")
         self.cursor.execute("PRAGMA synchronous=NORMAL;")
-        self.cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS inspection_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                partName     INTEGER NOT NULL,
-                lotNumber    TEXT    NOT NULL,
-                serialNumber TEXT    NOT NULL,
-                ok_add       INTEGER NOT NULL DEFAULT 0,
-                ng_add       INTEGER NOT NULL DEFAULT 0,
-                timestamp    TEXT    NOT NULL,
-                kensainName  TEXT
-            )
-            """
+
+        # Log table (one row per inspection)
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS inspection_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            partName     INTEGER NOT NULL,  -- 5/6/7/8
+            lotNumber    TEXT    NOT NULL,
+            serialNumber TEXT    NOT NULL,
+            ok_add       INTEGER NOT NULL DEFAULT 0,
+            ng_add       INTEGER NOT NULL DEFAULT 0,
+            timestamp    TEXT    NOT NULL,
+            kensainName  TEXT
         )
-        self.cursor.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_part_lot_serial
-            ON inspection_results(partName, lotNumber, serialNumber)
-            """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_part_lot_time
-            ON inspection_results(partName, lotNumber, timestamp)
-            """
-        )
+        """)
+
+        # Prevent duplicates: at most one row per (part, lot, serial)
+        self.cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_part_lot_serial
+        ON inspection_results(partName, lotNumber, serialNumber)
+        """)
+
+        # Speed up SUM + latest queries
+        self.cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_part_lot_time
+        ON inspection_results(partName, lotNumber, timestamp)
+        """)
+
         self.conn.commit()
+        
 
-    def _initialize_mysql_database(self) -> bool:
-        server_conn = None
-        server_cursor = None
-
-        try:
-            server_conn = mysql.connector.connect(
-                host=self.mysqlHost,
-                port=self.mysqlHostPort,
-                user=self.mysqlID,
-                password=self.mysqlPassword,
-                connection_timeout=self.mysqlConnectionTimeout,
-                autocommit=True,
-            )
-            server_cursor = server_conn.cursor()
-            server_cursor.execute(
-                f"CREATE DATABASE IF NOT EXISTS `{self.mysqlDatabase}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-            )
-
-            self.mysql_conn = mysql.connector.connect(
-                host=self.mysqlHost,
-                port=self.mysqlHostPort,
-                user=self.mysqlID,
-                password=self.mysqlPassword,
-                database=self.mysqlDatabase,
-                connection_timeout=self.mysqlConnectionTimeout,
-            )
-            self.mysql_cursor = self.mysql_conn.cursor()
-            self.mysql_cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS inspection_results (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    partName INT NOT NULL,
-                    lotNumber VARCHAR(255) NOT NULL,
-                    serialNumber VARCHAR(255) NOT NULL,
-                    ok_add INT NOT NULL DEFAULT 0,
-                    ng_add INT NOT NULL DEFAULT 0,
-                    timestamp DATETIME NOT NULL,
-                    kensainName VARCHAR(255),
-                    UNIQUE KEY uq_part_lot_serial (partName, lotNumber, serialNumber),
-                    KEY idx_part_lot_time (partName, lotNumber, timestamp)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """
-            )
-            self.mysql_conn.commit()
-            self.mysql_enabled = True
-            logger.info("MySQL inspection database initialized: %s", self.mysqlDatabase)
-            return True
-        except mysql.connector.Error as exc:
-            self.mysql_enabled = False
-            logger.warning("MySQL initialization failed; continuing with SQLite only: %s", exc)
-            self._close_mysql_connection()
-            return False
-        finally:
-            if server_cursor is not None:
-                server_cursor.close()
-            if server_conn is not None and server_conn.is_connected():
-                server_conn.close()
-
-    def _ensure_mysql_connection(self) -> bool:
-        if self.mysql_conn is not None and self.mysql_conn.is_connected() and self.mysql_cursor is not None:
-            return True
-        return self._initialize_mysql_database()
-
-    def _close_mysql_connection(self) -> None:
-        if self.mysql_cursor is not None:
-            self.mysql_cursor.close()
-            self.mysql_cursor = None
-        if self.mysql_conn is not None:
-            try:
-                if self.mysql_conn.is_connected():
-                    self.mysql_conn.close()
-            finally:
-                self.mysql_conn = None
-
-    def _close_database_connections(self) -> None:
-        if self.cursor is not None:
-            self.cursor.close()
-            self.cursor = None
-        if self.conn is not None:
-            self.conn.close()
-            self.conn = None
-        self._close_mysql_connection()
-
-    def _log_database_mode(self) -> None:
-        sqlite_path = os.path.abspath("./aikensa/inspection_results/agc_database_results.db")
-        if self.mysql_enabled:
-            print(
-                f"Database mode: SQLite + MySQL | sqlite={sqlite_path} | mysql={self.mysqlHost}:{self.mysqlHostPort}/{self.mysqlDatabase}"
-            )
-        else:
-            print(
-                f"Database mode: SQLite only | sqlite={sqlite_path} | mysql=offline"
-            )
-
-    def _save_result_sqlite(self, record: tuple) -> None:
-        self.cursor.execute("BEGIN")
-        self.cursor.execute(
-            """
-            DELETE FROM inspection_results
-            WHERE partName=? AND lotNumber=? AND serialNumber=?
-            """,
-            record[:3],
-        )
-        self.cursor.execute(
-            """
-            INSERT INTO inspection_results
-                (partName, lotNumber, serialNumber, ok_add, ng_add, timestamp, kensainName)
-            VALUES
-                (?, ?, ?, ?, ?, ?, ?)
-            """,
-            record,
-        )
-        self.conn.commit()
-
-    def _save_result_mysql(self, record: tuple) -> None:
-        if not self._ensure_mysql_connection():
-            return
-
-        try:
-            self.mysql_cursor.execute(
-                """
-                DELETE FROM inspection_results
-                WHERE partName=%s AND lotNumber=%s AND serialNumber=%s
-                """,
-                record[:3],
-            )
-            self.mysql_cursor.execute(
-                """
-                INSERT INTO inspection_results
-                    (partName, lotNumber, serialNumber, ok_add, ng_add, timestamp, kensainName)
-                VALUES
-                    (%s, %s, %s, %s, %s, %s, %s)
-                """,
-                record,
-            )
-            self.mysql_conn.commit()
-        except mysql.connector.Error:
-            if self.mysql_conn is not None:
-                self.mysql_conn.rollback()
-            self._close_mysql_connection()
-            raise
-
-    def run(self):
-        self._initialize_sqlite_database()
-        self._initialize_mysql_database()
-        self._log_database_mode()
 
         print("Inspection Thread Started")
 
@@ -653,56 +504,54 @@ class InspectionThread(QThread):
 
         self.load_crop_coords("aikensa/cameraconfig/part_pos.yaml")
 
-        try:
-            while self.running:
 
-                if self.inspection_config.debug_mode_selection == 1:
-                    self.debug = True
-                    # print("Debug Mode Enabled")
-                else:
-                    self.debug = False
-                    # print("Debug Mode Disabled")
+        while self.running:
 
-                if self.inspection_config.widget == 0:
-                    self.inspection_config.cameraID = -1
+            if self.inspection_config.debug_mode_selection == 1:
+                self.debug = True
+                # print("Debug Mode Enabled")
+            else:
+                self.debug = False
+                # print("Debug Mode Disabled")
 
-                if self.partNumber is not None:
-                    self.handle_part_number_update()
-                    # self.partNumber = self.partNumber_modbus
-                    self.InstructionCode = self.InstructionCode_modbus
+            if self.inspection_config.widget == 0:
+                self.inspection_config.cameraID = -1
 
-                if self.inspection_config.nichijoutenken_mode == True:
-                    if self.inspection_config.manual_part_selection == 1:
-                        self.partNumber = 4
-                    if self.inspection_config.manual_part_selection == 2:
-                        self.partNumber = 3
-                    if self.inspection_config.manual_part_selection == 3:
-                        self.partNumber = 2
-                    if self.inspection_config.manual_part_selection == 4:
-                        self.partNumber = 1
+            if self.partNumber is not None:
+                self.handle_part_number_update()
+                # self.partNumber = self.partNumber_modbus
+                self.InstructionCode = self.InstructionCode_modbus
 
-                if self._inspection_command_pending():
-                    self.ensure_models_initialized()
+            if self.inspection_config.nichijoutenken_mode == True:
+                if self.inspection_config.manual_part_selection == 1:
+                    self.partNumber = 4
+                if self.inspection_config.manual_part_selection == 2:
+                    self.partNumber = 3
+                if self.inspection_config.manual_part_selection == 3:
+                    self.partNumber = 2
+                if self.inspection_config.manual_part_selection == 4:
+                    self.partNumber = 1
+
+            if self._inspection_command_pending():
+                self.ensure_models_initialized()
 
 
-                if self.inspection_config.widget in [0, 5, 6, 7, 8]:
-                    ok, self.camFrame_ic4 = self.cap_cam_ic4.read(timeout_ms=self.camera_read_timeout_ms)
-                    if not ok or self.camFrame_ic4 is None:
-                        continue
-                    # self.camFrame_ic4 = cv2.rotate(self.camFrame_ic4, cv2.ROTATE_180)
-                widget_config = self.widget_inspection_configs.get(self.inspection_config.widget)
-                if widget_config is not None:
-                    if self.process_widget_inspection(widget_config):
-                        continue
-                                             
-                if self.InstructionCode == 5:
-                    # Close app and forcefully turn off PC
-                    print("Instruction Code 5 received, closing app and turning off PC.")
-                    os.system("shutdown /s /t 1")
-                    self.running = False
-                    break
-        finally:
-            self._close_database_connections()
+            if self.inspection_config.widget in [0, 5, 6, 7, 8]:
+                ok, self.camFrame_ic4 = self.cap_cam_ic4.read(timeout_ms=self.camera_read_timeout_ms)
+                if not ok or self.camFrame_ic4 is None:
+                    continue
+                # self.camFrame_ic4 = cv2.rotate(self.camFrame_ic4, cv2.ROTATE_180)
+            widget_config = self.widget_inspection_configs.get(self.inspection_config.widget)
+            if widget_config is not None:
+                if self.process_widget_inspection(widget_config):
+                    continue
+                                         
+            if self.InstructionCode == 5:
+                # Close app and forcefully turn off PC
+                print("Instruction Code 5 received, closing app and turning off PC.")
+                os.system("shutdown /s /t 1")
+                self.running = False
+                break
 
 
         self.msleep(1)
@@ -771,18 +620,29 @@ class InspectionThread(QThread):
 
         ts = datetime.now()
         ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
-        record = (partName, lotNumber, serialNumber, ok_add, ng_add, ts_str, str(kensainName))
 
         try:
-            self._save_result_sqlite(record)
+            self.cursor.execute("BEGIN")
+
+            # delete old row if exists (same lot+serial+part)
+            self.cursor.execute("""
+                DELETE FROM inspection_results
+                WHERE partName=? AND lotNumber=? AND serialNumber=?
+            """, (partName, lotNumber, serialNumber))
+
+            # insert new row
+            self.cursor.execute("""
+                INSERT INTO inspection_results
+                    (partName, lotNumber, serialNumber, ok_add, ng_add, timestamp, kensainName)
+                VALUES
+                    (?,       ?,        ?,           ?,      ?,      ?,         ?)
+            """, (partName, lotNumber, serialNumber, ok_add, ng_add, ts_str, str(kensainName)))
+
+            self.conn.commit()
+
         except Exception:
             self.conn.rollback()
             raise
-
-        try:
-            self._save_result_mysql(record)
-        except mysql.connector.Error as exc:
-            logger.warning("MySQL write failed; SQLite write succeeded: %s", exc)
 
     def get_last_entry_currentnumofPart(self, partName: int, lotNumber: str, serialNumber: str) -> list[int]:
         partName = int(partName)
@@ -888,22 +748,6 @@ class InspectionThread(QThread):
     def _pause_for_plc(self) -> None:
         self.msleep(self.command_pause_ms)
 
-    def _update_tray_preview_crops(self, widget_config: dict) -> None:
-        tray_config = widget_config.get("tray") or {}
-        crop_names = tray_config.get("crop_names") or {}
-        left_crop_name = crop_names.get("left")
-        right_crop_name = crop_names.get("right")
-
-        if left_crop_name:
-            self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, left_crop_name, out_w=512, out_h=512)
-        else:
-            self.Tray_detection_left_image = None
-
-        if right_crop_name:
-            self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, right_crop_name, out_w=512, out_h=512)
-        else:
-            self.Tray_detection_right_image = None
-
     def _prepare_widget_inspection(self, widget_config: dict) -> None:
         self.handle_adjustments_and_counterreset()
 
@@ -912,7 +756,6 @@ class InspectionThread(QThread):
             for crop_name in widget_config["part_crop_names"]
         ]
         self._set_current_part_crops(cropped_parts)
-        self._update_tray_preview_crops(widget_config)
         self.process_and_emit_parts(width=self.qtWindowWidth, height=self.qtWindowHeight)
 
         if self.firstTimeInspection is False and self.inspection_config.doInspection is False:
@@ -935,11 +778,28 @@ class InspectionThread(QThread):
 
     def _run_tray_detection(self, widget_config: dict, command: int) -> int:
         tray_config = widget_config["tray"]
-        self._update_tray_preview_crops(widget_config)
+        crop_names = tray_config["crop_names"]
+
+        self.Tray_detection_left_image = self.crop_part(self.camFrame_ic4, crop_names["left"], out_w=512, out_h=512)
+        self.Tray_detection_right_image = self.crop_part(self.camFrame_ic4, crop_names["right"], out_w=512, out_h=512)
+
+        # Emit tray images to UI
+        if self.Tray_detection_left_image is not None:
+            qimage_left = self.convertQImage(self.Tray_detection_left_image)
+            self.trayLeftCam.emit(qimage_left)
+        if self.Tray_detection_right_image is not None:
+            qimage_right = self.convertQImage(self.Tray_detection_right_image)
+            self.trayRightCam.emit(qimage_right)
 
         self.Tray_detection_left_result = aruco_detect_yolo(self.Tray_detection_left_image, model=self.arucoClassificer_model)
         self.Tray_detection_right_result = aruco_detect_yolo(self.Tray_detection_right_image, model=self.arucoClassificer_model)
         print(f"Tray Detection Left Result: {self.Tray_detection_left_result} Tray Detection Right Result: {self.Tray_detection_right_result}")
+
+        # Skip expected ID check if configured
+        if tray_config.get("skip_expected_id_check", False):
+            print(f"Skipping expected ID check for {widget_config['part_name']}, returning OK.")
+            self.InspectionResult_Tray_NG = 0
+            return self.InspectionResult_Tray_NG
 
         expected_left, expected_right = tray_config["expected_ids"]
         if (self.Tray_detection_left_result, self.Tray_detection_right_result) == (expected_left, expected_right):
@@ -1550,18 +1410,6 @@ class InspectionThread(QThread):
                 qimage = self.convertQImage(downsampled)
                 signal.emit(qimage)
                 setattr(self, attr_name, downsampled)
-
-        tray_crops = [
-            ("Tray_detection_left_image", self.trayLeftCam),
-            ("Tray_detection_right_image", self.trayRightCam),
-        ]
-
-        for attr_name, signal in tray_crops:
-            crop = getattr(self, attr_name, None)
-            if crop is not None:
-                downsampled = self.downSampling(crop, width=61, height=61)
-                qimage = self.convertQImage(downsampled)
-                signal.emit(qimage)
 
     def handle_part_number_update(self):
         """

@@ -1,6 +1,6 @@
 import cv2
 
-def show_camera_stream(camera_index=0):
+def show_camera_stream(camera_index=1):
     # Open the camera stream
     cap = cv2.VideoCapture(camera_index)
 

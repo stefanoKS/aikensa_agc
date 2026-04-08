@@ -15,6 +15,7 @@ from aikensa.opencv_imgprocessing.cannydetect import canny_edge_detection
 from aikensa.opencv_imgprocessing.cameracalibrate import detectCharucoBoard, calculatecameramatrix
 from aikensa.thread.calibration_thread import CalibrationThread, CalibrationConfig
 from aikensa.thread.inspection_thread import InspectionThread, InspectionConfig
+from aikensa.thread.tape_camera_thread import TapeCameraThread
 
 from aikensa.thread.time_thread import TimeMonitorThread
 from aikensa.thread.modbus_thread import ModbusServerThread
@@ -51,6 +52,12 @@ class AIKensa(QMainWindow):
 
         # Starting up the threads
         self.calibration_thread = CalibrationThread(CalibrationConfig())
+
+        # Initialize tape camera thread (second camera, OpenCV, index 0, 1280x720)
+        # Will auto-search for available camera if index 0 not available
+        self.tape_camera_thread = TapeCameraThread(camera_index=0, width=1280, height=720)
+        self.tape_camera_thread.frameSignal.connect(self._setTapeFrame)
+        self.tape_camera_thread.start()
 
         #Passthrough the modbus thread to the inspection thread so it can write to the holding registers
         self.timeMonitorThread = TimeMonitorThread(check_interval=1)
@@ -211,6 +218,7 @@ class AIKensa(QMainWindow):
         self.inspection_thread.stop()
         self.modbusThread.stop()
         self.timeMonitorThread.stop()
+        self.tape_camera_thread.stop()
 
         time.sleep(1.0)
         QCoreApplication.instance().quit()
@@ -277,31 +285,56 @@ class AIKensa(QMainWindow):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label1 = widget.findChild(QLabel, "FramePart1")
-            label1.setPixmap(QPixmap.fromImage(image))
+            if label1:
+                scaled_pixmap = QPixmap.fromImage(image).scaled(
+                    label1.width(), label1.height(),
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                label1.setPixmap(scaled_pixmap)
 
     def _setPartFrame2(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label2 = widget.findChild(QLabel, "FramePart2")
-            label2.setPixmap(QPixmap.fromImage(image))
+            if label2:
+                scaled_pixmap = QPixmap.fromImage(image).scaled(
+                    label2.width(), label2.height(),
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                label2.setPixmap(scaled_pixmap)
 
     def _setPartFrame3(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label3 = widget.findChild(QLabel, "FramePart3")
-            label3.setPixmap(QPixmap.fromImage(image))
+            if label3:
+                scaled_pixmap = QPixmap.fromImage(image).scaled(
+                    label3.width(), label3.height(),
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                label3.setPixmap(scaled_pixmap)
 
     def _setPartFrame4(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label4 = widget.findChild(QLabel, "FramePart4")
-            label4.setPixmap(QPixmap.fromImage(image))
+            if label4:
+                scaled_pixmap = QPixmap.fromImage(image).scaled(
+                    label4.width(), label4.height(),
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                label4.setPixmap(scaled_pixmap)
 
     def _setPartFrame5(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label5 = widget.findChild(QLabel, "FramePart5")
-            label5.setPixmap(QPixmap.fromImage(image))
+            if label5:
+                scaled_pixmap = QPixmap.fromImage(image).scaled(
+                    label5.width(), label5.height(),
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                label5.setPixmap(scaled_pixmap)
 
     def _setTrayEmitLeft(self, image):
         for i in [5]:
@@ -316,6 +349,19 @@ class AIKensa(QMainWindow):
             label = widget.findChild(QLabel, "tray_emit_R")
             if label:
                 label.setPixmap(QPixmap.fromImage(image))
+
+    def _setTapeFrame(self, image):
+        """Display tape camera stream on TapeFrame QLabel."""
+        widget = self.stackedWidget.widget(5)
+        if widget:
+            label = widget.findChild(QLabel, "TapeFrame")
+            if label:
+                # Scale the image to fit the label
+                scaled_pixmap = QPixmap.fromImage(image).scaled(
+                    label.width(), label.height(),
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                label.setPixmap(scaled_pixmap)
 
     def _get_agc_widget(self):
         if not hasattr(self, "stackedWidget"):

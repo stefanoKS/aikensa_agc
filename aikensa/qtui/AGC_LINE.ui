@@ -390,9 +390,9 @@ border: 1px solid #7f89a8;
      <property name="geometry">
       <rect>
        <x>10</x>
-       <y>10</y>
+       <y>19</y>
        <width>91</width>
-       <height>110</height>
+       <height>91</height>
       </rect>
      </property>
      <property name="font">
@@ -421,9 +421,9 @@ border: 1px solid #7f89a8;
      <property name="geometry">
       <rect>
        <x>10</x>
-       <y>150</y>
+       <y>159</y>
        <width>91</width>
-       <height>110</height>
+       <height>91</height>
       </rect>
      </property>
      <property name="font">
@@ -452,9 +452,9 @@ border: 1px solid #7f89a8;
      <property name="geometry">
       <rect>
        <x>10</x>
-       <y>290</y>
+       <y>299</y>
        <width>91</width>
-       <height>110</height>
+       <height>91</height>
       </rect>
      </property>
      <property name="font">
@@ -483,9 +483,9 @@ border: 1px solid #7f89a8;
      <property name="geometry">
       <rect>
        <x>10</x>
-       <y>430</y>
+       <y>439</y>
        <width>91</width>
-       <height>110</height>
+       <height>91</height>
       </rect>
      </property>
      <property name="font">
@@ -514,9 +514,9 @@ border: 1px solid #7f89a8;
      <property name="geometry">
       <rect>
        <x>10</x>
-       <y>570</y>
+       <y>579</y>
        <width>91</width>
-       <height>110</height>
+       <height>91</height>
       </rect>
      </property>
      <property name="font">
@@ -565,7 +565,7 @@ border: 1px solid #7f89a8;
     <widget class="QLabel" name="label_20">
      <property name="geometry">
       <rect>
-       <x>1520</x>
+       <x>1590</x>
        <y>480</y>
        <width>181</width>
        <height>41</height>
@@ -595,7 +595,7 @@ border: 1px solid #7f89a8;
       <rect>
        <x>1530</x>
        <y>520</y>
-       <width>231</width>
+       <width>301</width>
        <height>20</height>
       </rect>
      </property>
@@ -606,7 +606,7 @@ border: 1px solid #7f89a8;
     <widget class="QLabel" name="JIKAN_ATARI">
      <property name="geometry">
       <rect>
-       <x>1560</x>
+       <x>1590</x>
        <y>550</y>
        <width>181</width>
        <height>101</height>
@@ -796,9 +796,9 @@ border-radius: 8px;</string>
     <property name="geometry">
      <rect>
       <x>15</x>
-      <y>960</y>
+      <y>950</y>
       <width>221</width>
-      <height>61</height>
+      <height>71</height>
      </rect>
     </property>
     <property name="font">
@@ -1014,34 +1014,6 @@ border-radius: 6px;</string>
      <set>Qt::AlignCenter</set>
     </property>
    </widget>
-   <widget class="QLabel" name="status_furyou">
-    <property name="geometry">
-     <rect>
-      <x>655</x>
-      <y>880</y>
-      <width>41</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
-      <weight>75</weight>
-      <bold>true</bold>
-      <underline>false</underline>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: rgb(192, 191, 188);</string>
-    </property>
-    <property name="text">
-     <string>0</string>
-    </property>
-    <property name="alignment">
-     <set>Qt::AlignCenter</set>
-    </property>
-   </widget>
    <widget class="QLabel" name="label_9">
     <property name="geometry">
      <rect>
@@ -1073,39 +1045,11 @@ border-radius: 6px;</string>
      <set>Qt::AlignCenter</set>
     </property>
    </widget>
-   <widget class="QLabel" name="status_kansei">
-    <property name="geometry">
-     <rect>
-      <x>655</x>
-      <y>850</y>
-      <width>41</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>17</pointsize>
-      <weight>75</weight>
-      <bold>true</bold>
-      <underline>false</underline>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: rgb(192, 191, 188);</string>
-    </property>
-    <property name="text">
-     <string>0</string>
-    </property>
-    <property name="alignment">
-     <set>Qt::AlignCenter</set>
-    </property>
-   </widget>
    <widget class="QLabel" name="label_11">
     <property name="geometry">
      <rect>
       <x>20</x>
-      <y>845</y>
+      <y>860</y>
       <width>141</width>
       <height>41</height>
      </rect>
@@ -1127,99 +1071,6 @@ border-radius: 6px;</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignCenter</set>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="furyou_plus_10">
-    <property name="geometry">
-     <rect>
-      <x>250</x>
-      <y>900</y>
-      <width>41</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: #f7f2ff;</string>
-    </property>
-    <property name="text">
-     <string>+10</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="kansei_plus_10">
-    <property name="geometry">
-     <rect>
-      <x>250</x>
-      <y>845</y>
-      <width>41</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: #f7f2ff;</string>
-    </property>
-    <property name="text">
-     <string>+10</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="label_12">
-    <property name="geometry">
-     <rect>
-      <x>500</x>
-      <y>840</y>
-      <width>201</width>
-      <height>81</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>11</pointsize>
-      <weight>50</weight>
-      <bold>false</bold>
-      <underline>false</underline>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">background-color: #404661;
-    border: 1px solid #808cb0;
-border-radius: 10px;</string>
-    </property>
-    <property name="text">
-     <string/>
-    </property>
-    <property name="alignment">
-     <set>Qt::AlignCenter</set>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="kansei_plus">
-    <property name="geometry">
-     <rect>
-      <x>320</x>
-      <y>845</y>
-      <width>41</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: #f7f2ff;</string>
-    </property>
-    <property name="text">
-     <string>+1</string>
     </property>
    </widget>
    <widget class="QLabel" name="current_furyou">
@@ -1281,66 +1132,11 @@ border-radius: 10px;</string>
      <set>Qt::AlignCenter</set>
     </property>
    </widget>
-   <widget class="QLabel" name="label_14">
-    <property name="geometry">
-     <rect>
-      <x>505</x>
-      <y>850</y>
-      <width>81</width>
-      <height>61</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>11</pointsize>
-      <weight>50</weight>
-      <bold>false</bold>
-      <underline>false</underline>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: #eff7ff;
-        background-color: #4b6287;
-        border: 1px solid #a8c8ea;
-    border-radius: 6px;</string>
-    </property>
-    <property name="text">
-     <string>本日合計</string>
-    </property>
-    <property name="alignment">
-     <set>Qt::AlignCenter</set>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="furyou_minus_10">
-    <property name="geometry">
-     <rect>
-      <x>250</x>
-      <y>925</y>
-      <width>41</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">background-color: #59627f;
-    color: #f7f2ff;
-    border: 1px solid #929cc0;
-border-radius: 4px;</string>
-    </property>
-    <property name="text">
-     <string>-10</string>
-    </property>
-   </widget>
    <widget class="QLabel" name="current_kansei">
     <property name="geometry">
      <rect>
       <x>170</x>
-      <y>845</y>
+      <y>860</y>
       <width>61</width>
       <height>41</height>
      </rect>
@@ -1365,190 +1161,6 @@ border-radius: 4px;</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignCenter</set>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="counterReset">
-    <property name="geometry">
-     <rect>
-      <x>375</x>
-      <y>845</y>
-      <width>121</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>10</pointsize>
-      <weight>75</weight>
-      <italic>false</italic>
-      <bold>true</bold>
-      <stylestrategy>PreferAntialias</stylestrategy>
-     </font>
-    </property>
-    <property name="autoFillBackground">
-     <bool>false</bool>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">background-color: #cab8f2;
-    color: #3c3654;
-    border: 1px solid #e2d6ff;
-border-radius: 8px;</string>
-    </property>
-    <property name="text">
-     <string>カウンタリセット</string>
-    </property>
-    <property name="checkable">
-     <bool>false</bool>
-    </property>
-   </widget>
-   <widget class="QLabel" name="label_15">
-    <property name="geometry">
-     <rect>
-      <x>585</x>
-      <y>850</y>
-      <width>71</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>11</pointsize>
-      <weight>50</weight>
-      <bold>false</bold>
-      <underline>false</underline>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: rgb(238, 238, 236);</string>
-    </property>
-    <property name="text">
-     <string>完成品</string>
-    </property>
-    <property name="alignment">
-     <set>Qt::AlignCenter</set>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="furyou_minus">
-    <property name="geometry">
-     <rect>
-      <x>320</x>
-      <y>925</y>
-      <width>41</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">background-color: #59627f;
-    color: #f7f2ff;
-    border: 1px solid #929cc0;
-border-radius: 4px;</string>
-    </property>
-    <property name="text">
-     <string>-1</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="label_16">
-    <property name="geometry">
-     <rect>
-      <x>585</x>
-      <y>880</y>
-      <width>71</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Ubuntu Mono</family>
-      <pointsize>11</pointsize>
-      <weight>50</weight>
-      <bold>false</bold>
-      <underline>false</underline>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: rgb(238, 238, 236);</string>
-    </property>
-    <property name="text">
-     <string>不良品</string>
-    </property>
-    <property name="alignment">
-     <set>Qt::AlignCenter</set>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="kansei_minus">
-    <property name="geometry">
-     <rect>
-      <x>320</x>
-      <y>870</y>
-      <width>41</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">background-color: #59627f;
-    color: #f7f2ff;
-    border: 1px solid #929cc0;
-border-radius: 4px;</string>
-    </property>
-    <property name="text">
-     <string>-1</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="kansei_minus_10">
-    <property name="geometry">
-     <rect>
-      <x>250</x>
-      <y>870</y>
-      <width>41</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">background-color: #59627f;
-    color: #f7f2ff;
-    border: 1px solid #929cc0;
-    border-radius: 4px;</string>
-    </property>
-    <property name="text">
-     <string>-10</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="furyou_plus">
-    <property name="geometry">
-     <rect>
-      <x>320</x>
-      <y>900</y>
-      <width>41</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">color: #f7f2ff;</string>
-    </property>
-    <property name="text">
-     <string>+1</string>
     </property>
    </widget>
    <widget class="QLabel" name="label_5">
@@ -1611,9 +1223,9 @@ border-radius: 4px;</string>
     <property name="geometry">
      <rect>
       <x>260</x>
-      <y>960</y>
+      <y>950</y>
       <width>221</width>
-      <height>61</height>
+      <height>71</height>
      </rect>
     </property>
     <property name="font">
@@ -1646,7 +1258,7 @@ Tape Inspection</string>
       <x>750</x>
       <y>850</y>
       <width>231</width>
-      <height>71</height>
+      <height>61</height>
      </rect>
     </property>
     <property name="font">
@@ -1827,10 +1439,10 @@ border-radius: 6px;</string>
    <widget class="QLabel" name="block">
     <property name="geometry">
      <rect>
-      <x>240</x>
-      <y>830</y>
-      <width>471</width>
-      <height>121</height>
+      <x>320</x>
+      <y>850</y>
+      <width>351</width>
+      <height>61</height>
      </rect>
     </property>
     <property name="font">
@@ -1883,7 +1495,7 @@ border-radius: 6px;</string>
    <widget class="QLabel" name="PLC_STATUS_label">
     <property name="geometry">
      <rect>
-      <x>1000</x>
+      <x>1010</x>
       <y>890</y>
       <width>121</width>
       <height>61</height>
@@ -1912,7 +1524,7 @@ border-radius: 6px;</string>
     <property name="geometry">
      <rect>
       <x>330</x>
-      <y>850</y>
+      <y>860</y>
       <width>160</width>
       <height>41</height>
      </rect>
@@ -1959,8 +1571,8 @@ border-radius: 6px;</string>
    <widget class="QWidget" name="gridLayoutWidget_2">
     <property name="geometry">
      <rect>
-      <x>500</x>
-      <y>850</y>
+      <x>510</x>
+      <y>860</y>
       <width>151</width>
       <height>41</height>
      </rect>
@@ -2056,7 +1668,7 @@ border-radius: 10px;</string>
    <widget class="QFrame" name="frame_2">
     <property name="geometry">
      <rect>
-      <x>990</x>
+      <x>1000</x>
       <y>850</y>
       <width>141</width>
       <height>111</height>
@@ -2074,7 +1686,6 @@ border-radius: 10px;</string>
      <enum>QFrame::Raised</enum>
     </property>
    </widget>
-   <zorder>label_12</zorder>
    <zorder>line_1</zorder>
    <zorder>line_2</zorder>
    <zorder>mainmenubutton</zorder>
@@ -2092,25 +1703,11 @@ border-radius: 10px;</string>
    <zorder>label_8</zorder>
    <zorder>partlabel</zorder>
    <zorder>timeLabel</zorder>
-   <zorder>status_furyou</zorder>
-   <zorder>status_kansei</zorder>
    <zorder>label_9</zorder>
    <zorder>label_11</zorder>
-   <zorder>furyou_plus_10</zorder>
-   <zorder>kansei_plus_10</zorder>
-   <zorder>kansei_plus</zorder>
    <zorder>current_furyou</zorder>
    <zorder>label_13</zorder>
-   <zorder>label_14</zorder>
-   <zorder>furyou_minus_10</zorder>
    <zorder>current_kansei</zorder>
-   <zorder>counterReset</zorder>
-   <zorder>label_15</zorder>
-   <zorder>furyou_minus</zorder>
-   <zorder>label_16</zorder>
-   <zorder>kansei_minus</zorder>
-   <zorder>kansei_minus_10</zorder>
-   <zorder>furyou_plus</zorder>
    <zorder>label_5</zorder>
    <zorder>status_SERIALNO</zorder>
    <zorder>InspectTapeButton</zorder>
@@ -2136,7 +1733,7 @@ border-radius: 10px;</string>
      <x>0</x>
      <y>0</y>
      <width>1920</width>
-     <height>21</height>
+     <height>22</height>
     </rect>
    </property>
   </widget>

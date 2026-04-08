@@ -113,6 +113,10 @@ class InspectionThread(QThread):
             self.inspection_config = inspection_config
 
         self.modbus_thread = modbus_thread
+        self.conn = None
+        self.cursor = None
+        self.mysql_conn = None
+        self.mysql_cursor = None
 
         if self.modbus_thread is not None:
             self.modbus_thread.holdingUpdated.connect(self.on_holding_update)
@@ -323,17 +327,23 @@ class InspectionThread(QThread):
         self.today_counter_offset_day = datetime.now().strftime("%Y%m%d")
         self.last_emitted_serial_number = None
         self.last_emitted_lot_number = None
+        self.last_valid_serial_number = None
+        self.last_valid_lot_number = None
+        self.mysql_database_name = "aikensa_agc"
+        self.mysql_credentials_path = "aikensa/mysql/id.yaml"
+        self.mysql_init_sql_path = "aikensa/mysql/init_inspection_results.sql"
+        self.mysql_log_path = "./aikensa/inspection_results/mysql_connection.log"
 
         self.temp_prev_OK = 0
         self.temp_prev_NG = 0
 
         # "Read mysql id and password from yaml file"
-        with open("aikensa/mysql/id.yaml") as file:
+        with open(self._resolve_workspace_path(self.mysql_credentials_path), encoding="utf-8") as file:
             credentials = yaml.load(file, Loader=yaml.FullLoader)
             self.mysqlID = credentials["id"]
             self.mysqlPassword = credentials["pass"]
             self.mysqlHost = credentials["host"]
-            self.mysqlHostPort = credentials["port"]
+            self.mysqlHostPort = int(credentials["port"])
 
         self.holding_register_path = "./aikensa/modbus/holding_register_map.yaml"
         self.ic4_camera_config_path = "./aikensa/cameraconfig/ic4_camera.yaml"
@@ -385,8 +395,21 @@ class InspectionThread(QThread):
             self.lotASCIICode_7,
             self.lotASCIICode_8]
         )
-        self.current_LotNumber = f"{self.lotASCIICode_chars}{self.lotNumber_back:05d}{self.lotNumber_front:05d}"
-        self.current_SerialNumber = f"{self.serialNumber_back:05d}{self.serialNumber_front:05d}"
+
+        lot_candidate = f"{self.lotASCIICode_chars}{self.lotNumber_back:05d}{self.lotNumber_front:05d}"
+        serial_candidate = f"{self.serialNumber_back:05d}{self.serialNumber_front:05d}"
+
+        if self._is_default_lot_payload(self.lotASCIICode_chars, self.lotNumber_front, self.lotNumber_back):
+            self.current_LotNumber = self.last_valid_lot_number or lot_candidate
+        else:
+            self.current_LotNumber = lot_candidate
+            self.last_valid_lot_number = lot_candidate
+
+        if self._is_default_serial_payload(self.serialNumber_front, self.serialNumber_back):
+            self.current_SerialNumber = self.last_valid_serial_number or serial_candidate
+        else:
+            self.current_SerialNumber = serial_candidate
+            self.last_valid_serial_number = serial_candidate
 
         if self.current_LotNumber != self.last_emitted_lot_number:
             self.last_emitted_lot_number = self.current_LotNumber
@@ -453,8 +476,39 @@ class InspectionThread(QThread):
             self.cap_cam0 = None
             print("Camera 0 released.")
 
-    def run(self):
+    def _resolve_workspace_path(self, relative_path: str) -> str:
+        abs_from_cwd = os.path.abspath(relative_path)
+        if os.path.exists(abs_from_cwd):
+            return abs_from_cwd
+        here = os.path.dirname(os.path.abspath(__file__))
+        abs_from_file = os.path.abspath(os.path.join(here, os.path.normpath(relative_path)))
+        if os.path.exists(abs_from_file):
+            return abs_from_file
+        workspace_root = os.path.abspath(os.path.join(here, "..", ".."))
+        abs_from_workspace_root = os.path.abspath(
+            os.path.join(workspace_root, os.path.normpath(relative_path))
+        )
+        if os.path.exists(abs_from_workspace_root):
+            return abs_from_workspace_root
+        raise FileNotFoundError(
+            f"Path not found.\n  Tried:\n    {abs_from_cwd}\n    {abs_from_file}\n    {abs_from_workspace_root}"
+        )
 
+    def _log_mysql_message(self, message: str) -> None:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        formatted = f"[{timestamp}] {message}"
+        logger.error(formatted)
+        print(formatted)
+        try:
+            log_dir = os.path.dirname(self.mysql_log_path)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
+            with open(self.mysql_log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(formatted + "\n")
+        except Exception:
+            logger.exception("Failed to write MySQL log file")
+
+    def _initialize_sqlite_storage(self) -> None:
         db_dir = "./aikensa/inspection_results"
         os.makedirs(db_dir, exist_ok=True)
 
@@ -463,15 +517,13 @@ class InspectionThread(QThread):
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
 
-        # good defaults for app usage
         self.cursor.execute("PRAGMA journal_mode=WAL;")
         self.cursor.execute("PRAGMA synchronous=NORMAL;")
 
-        # Log table (one row per inspection)
         self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS inspection_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            partName     INTEGER NOT NULL,  -- 5/6/7/8
+            partName     INTEGER NOT NULL,
             lotNumber    TEXT    NOT NULL,
             serialNumber TEXT    NOT NULL,
             ok_add       INTEGER NOT NULL DEFAULT 0,
@@ -481,80 +533,283 @@ class InspectionThread(QThread):
         )
         """)
 
-        # Prevent duplicates: at most one row per (part, lot, serial)
         self.cursor.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uq_part_lot_serial
         ON inspection_results(partName, lotNumber, serialNumber)
         """)
 
-        # Speed up SUM + latest queries
         self.cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_part_lot_time
         ON inspection_results(partName, lotNumber, timestamp)
         """)
 
+        self.add_columns(
+            self.cursor,
+            "inspection_results",
+            [("kensainName", "TEXT")],
+        )
         self.conn.commit()
-        
+
+    def _split_sql_statements(self, sql_text: str) -> list[str]:
+        statements = []
+        current = []
+
+        for line in sql_text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("--"):
+                continue
+            current.append(line)
+            if stripped.endswith(";"):
+                statement = "\n".join(current).strip()
+                if statement:
+                    statements.append(statement[:-1] if statement.endswith(";") else statement)
+                current = []
+
+        tail = "\n".join(current).strip()
+        if tail:
+            statements.append(tail[:-1] if tail.endswith(";") else tail)
+
+        return statements
+
+    def _ensure_mysql_columns(self) -> None:
+        if self.mysql_cursor is None:
+            return
+
+        required_columns = {
+            "partName": "INT NOT NULL",
+            "lotNumber": "VARCHAR(255) NOT NULL",
+            "serialNumber": "VARCHAR(255) NOT NULL",
+            "ok_add": "INT NOT NULL DEFAULT 0",
+            "ng_add": "INT NOT NULL DEFAULT 0",
+            "timestamp": "DATETIME NOT NULL",
+            "kensainName": "VARCHAR(255)",
+        }
+
+        self.mysql_cursor.execute(
+            """
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s
+            """,
+            (self.mysql_database_name, "inspection_results"),
+        )
+        existing_columns = {row[0] for row in self.mysql_cursor.fetchall()}
+
+        for column_name, column_type in required_columns.items():
+            if column_name in existing_columns:
+                continue
+            self.mysql_cursor.execute(
+                f"ALTER TABLE inspection_results ADD COLUMN {column_name} {column_type}"
+            )
+
+    def _ensure_mysql_indexes(self) -> None:
+        if self.mysql_cursor is None:
+            return
+
+        self.mysql_cursor.execute(
+            """
+            SELECT INDEX_NAME
+            FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s
+            """,
+            (self.mysql_database_name, "inspection_results"),
+        )
+        existing_indexes = {row[0] for row in self.mysql_cursor.fetchall()}
+
+        if "uq_part_lot_serial" not in existing_indexes:
+            self.mysql_cursor.execute(
+                """
+                ALTER TABLE inspection_results
+                ADD UNIQUE KEY uq_part_lot_serial (partName, lotNumber, serialNumber)
+                """
+            )
+
+        if "idx_part_lot_time" not in existing_indexes:
+            self.mysql_cursor.execute(
+                """
+                CREATE INDEX idx_part_lot_time
+                ON inspection_results(partName, lotNumber, timestamp)
+                """
+            )
+
+    def _close_mysql_storage(self) -> None:
+        if self.mysql_cursor is not None:
+            try:
+                self.mysql_cursor.close()
+            except Exception:
+                pass
+            self.mysql_cursor = None
+
+        if self.mysql_conn is not None:
+            try:
+                self.mysql_conn.close()
+            except Exception:
+                pass
+            self.mysql_conn = None
+
+    def _initialize_mysql_storage(self) -> None:
+        self._close_mysql_storage()
+
+        try:
+            init_sql_path = self._resolve_workspace_path(self.mysql_init_sql_path)
+            with open(init_sql_path, "r", encoding="utf-8") as sql_file:
+                init_sql = sql_file.read()
+
+            bootstrap_conn = mysql.connector.connect(
+                host=self.mysqlHost,
+                port=self.mysqlHostPort,
+                user=self.mysqlID,
+                password=self.mysqlPassword,
+                connection_timeout=5,
+                autocommit=True,
+            )
+            bootstrap_cursor = bootstrap_conn.cursor()
+            for statement in self._split_sql_statements(init_sql):
+                bootstrap_cursor.execute(statement)
+            bootstrap_cursor.close()
+            bootstrap_conn.close()
+
+            self.mysql_conn = mysql.connector.connect(
+                host=self.mysqlHost,
+                port=self.mysqlHostPort,
+                user=self.mysqlID,
+                password=self.mysqlPassword,
+                database=self.mysql_database_name,
+                connection_timeout=5,
+                autocommit=False,
+            )
+            self.mysql_cursor = self.mysql_conn.cursor()
+            self._ensure_mysql_columns()
+            self._ensure_mysql_indexes()
+            self.mysql_conn.commit()
+            logger.info(
+                "MySQL initialized for %s:%s/%s",
+                self.mysqlHost,
+                self.mysqlHostPort,
+                self.mysql_database_name,
+            )
+        except mysql.connector.Error as err:
+            self._log_mysql_message(
+                f"MySQL initialization failed for {self.mysqlHost}:{self.mysqlHostPort}/{self.mysql_database_name}: {err}"
+            )
+            self._close_mysql_storage()
+        except Exception as err:
+            self._log_mysql_message(f"Unexpected MySQL initialization error: {err}")
+            self._close_mysql_storage()
+
+    def _save_result_mysql(
+        self,
+        partName: int,
+        lotNumber: str,
+        serialNumber: str,
+        ts_str: str,
+        kensainName: str,
+        ok_add: int,
+        ng_add: int,
+    ) -> None:
+        if self.mysql_conn is None or self.mysql_cursor is None:
+            self._initialize_mysql_storage()
+
+        if self.mysql_conn is None or self.mysql_cursor is None:
+            self._log_mysql_message(
+                f"MySQL write skipped because no connection is available for part={partName}, lot={lotNumber}, serial={serialNumber}"
+            )
+            return
+
+        try:
+            self.mysql_cursor.execute(
+                """
+                INSERT INTO inspection_results
+                    (partName, lotNumber, serialNumber, ok_add, ng_add, timestamp, kensainName)
+                VALUES
+                    (%s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    ok_add=VALUES(ok_add),
+                    ng_add=VALUES(ng_add),
+                    timestamp=VALUES(timestamp),
+                    kensainName=VALUES(kensainName)
+                """,
+                (partName, lotNumber, serialNumber, ok_add, ng_add, ts_str, str(kensainName)),
+            )
+            self.mysql_conn.commit()
+        except mysql.connector.Error as err:
+            try:
+                self.mysql_conn.rollback()
+            except Exception:
+                pass
+            self._log_mysql_message(
+                f"MySQL write failed for part={partName}, lot={lotNumber}, serial={serialNumber}: {err}"
+            )
+            self._close_mysql_storage()
+
+    def run(self):
+        self._initialize_sqlite_storage()
+        self._initialize_mysql_storage()
+        try:
+            print("Inspection Thread Started")
+
+            self.current_cameraID = self.inspection_config.cameraID
+            self.initialize_single_camera(0)
+
+            self.load_crop_coords("aikensa/cameraconfig/part_pos.yaml")
 
 
-        print("Inspection Thread Started")
+            while self.running:
 
-        self.current_cameraID = self.inspection_config.cameraID
-        self.initialize_single_camera(0)
+                if self.inspection_config.debug_mode_selection == 1:
+                    self.debug = True
+                    # print("Debug Mode Enabled")
+                else:
+                    self.debug = False
+                    # print("Debug Mode Disabled")
 
-        self.load_crop_coords("aikensa/cameraconfig/part_pos.yaml")
+                if self.inspection_config.widget == 0:
+                    self.inspection_config.cameraID = -1
 
+                if self.partNumber is not None:
+                    self.handle_part_number_update()
+                    # self.partNumber = self.partNumber_modbus
+                    self.InstructionCode = self.InstructionCode_modbus
 
-        while self.running:
+                if self.inspection_config.nichijoutenken_mode == True:
+                    if self.inspection_config.manual_part_selection == 1:
+                        self.partNumber = 4
+                    if self.inspection_config.manual_part_selection == 2:
+                        self.partNumber = 3
+                    if self.inspection_config.manual_part_selection == 3:
+                        self.partNumber = 2
+                    if self.inspection_config.manual_part_selection == 4:
+                        self.partNumber = 1
 
-            if self.inspection_config.debug_mode_selection == 1:
-                self.debug = True
-                # print("Debug Mode Enabled")
-            else:
-                self.debug = False
-                # print("Debug Mode Disabled")
-
-            if self.inspection_config.widget == 0:
-                self.inspection_config.cameraID = -1
-
-            if self.partNumber is not None:
-                self.handle_part_number_update()
-                # self.partNumber = self.partNumber_modbus
-                self.InstructionCode = self.InstructionCode_modbus
-
-            if self.inspection_config.nichijoutenken_mode == True:
-                if self.inspection_config.manual_part_selection == 1:
-                    self.partNumber = 4
-                if self.inspection_config.manual_part_selection == 2:
-                    self.partNumber = 3
-                if self.inspection_config.manual_part_selection == 3:
-                    self.partNumber = 2
-                if self.inspection_config.manual_part_selection == 4:
-                    self.partNumber = 1
-
-            if self._inspection_command_pending():
-                self.ensure_models_initialized()
+                if self._inspection_command_pending():
+                    self.ensure_models_initialized()
 
 
-            if self.inspection_config.widget in [0, 5, 6, 7, 8]:
-                ok, self.camFrame_ic4 = self.cap_cam_ic4.read(timeout_ms=self.camera_read_timeout_ms)
-                if not ok or self.camFrame_ic4 is None:
-                    continue
-                # self.camFrame_ic4 = cv2.rotate(self.camFrame_ic4, cv2.ROTATE_180)
-            widget_config = self.widget_inspection_configs.get(self.inspection_config.widget)
-            if widget_config is not None:
-                if self.process_widget_inspection(widget_config):
-                    continue
-                                         
-            if self.InstructionCode == 5:
-                # Close app and forcefully turn off PC
-                print("Instruction Code 5 received, closing app and turning off PC.")
-                os.system("shutdown /s /t 1")
-                self.running = False
-                break
+                if self.inspection_config.widget in [0, 5, 6, 7, 8]:
+                    ok, self.camFrame_ic4 = self.cap_cam_ic4.read(timeout_ms=self.camera_read_timeout_ms)
+                    if not ok or self.camFrame_ic4 is None:
+                        continue
+                    # self.camFrame_ic4 = cv2.rotate(self.camFrame_ic4, cv2.ROTATE_180)
+                widget_config = self.widget_inspection_configs.get(self.inspection_config.widget)
+                if widget_config is not None:
+                    if self.process_widget_inspection(widget_config):
+                        continue
 
-
-        self.msleep(1)
+                if self.InstructionCode == 5:
+                    # Close app and forcefully turn off PC
+                    print("Instruction Code 5 received, closing app and turning off PC.")
+                    os.system("shutdown /s /t 1")
+                    self.running = False
+                    break
+        finally:
+            self.msleep(1)
+            if self.cursor is not None:
+                self.cursor.close()
+                self.cursor = None
+            if self.conn is not None:
+                self.conn.close()
+                self.conn = None
+            self._close_mysql_storage()
 
     def setCounterFalse(self):
         self.inspection_config.furyou_plus = False
@@ -644,6 +899,16 @@ class InspectionThread(QThread):
             self.conn.rollback()
             raise
 
+        self._save_result_mysql(
+            partName=partName,
+            lotNumber=lotNumber,
+            serialNumber=serialNumber,
+            ts_str=ts_str,
+            kensainName=kensainName,
+            ok_add=ok_add,
+            ng_add=ng_add,
+        )
+
     def get_last_entry_currentnumofPart(self, partName: int, lotNumber: str, serialNumber: str) -> list[int]:
         partName = int(partName)
         lotNumber = str(lotNumber)
@@ -675,16 +940,7 @@ class InspectionThread(QThread):
         return [total_ok, total_ng]
         
     def _resolve_yaml_path(self, yaml_path: str) -> str:
-        abs_from_cwd = os.path.abspath(yaml_path)
-        if os.path.exists(abs_from_cwd):
-            return abs_from_cwd
-        here = os.path.dirname(os.path.abspath(__file__))
-        abs_from_file = os.path.abspath(os.path.join(here, os.path.normpath(yaml_path)))
-        if os.path.exists(abs_from_file):
-            return abs_from_file
-        raise FileNotFoundError(
-            f"YAML not found.\n  Tried:\n    {abs_from_cwd}\n    {abs_from_file}"
-        )
+        return self._resolve_workspace_path(yaml_path)
     
     def load_crop_coords(self, yaml_path: str):
         abs_path = self._resolve_yaml_path(yaml_path)
@@ -1384,7 +1640,7 @@ class InspectionThread(QThread):
                 ADD COLUMN {column_name} {column_type};
                 ''')
                 print(f"Added column: {column_name}")
-            except sqlite3.OperationalError as e:
+            except (sqlite3.OperationalError, mysql.connector.Error) as e:
                 print(f"Could not add column {column_name}: {e}")
 
     def process_and_emit_parts(self, width: int, height: int):
@@ -1442,6 +1698,14 @@ class InspectionThread(QThread):
         self.inspection_config.widget = 0
         self.firstTimeInspection = True
         self.inspection_config.doInspection = False
+
+    @staticmethod
+    def _is_default_lot_payload(lot_prefix: str, lot_front: int, lot_back: int) -> bool:
+        return not lot_prefix and int(lot_front) == 0 and int(lot_back) == 0
+
+    @staticmethod
+    def _is_default_serial_payload(serial_front: int, serial_back: int) -> bool:
+        return int(serial_front) == 0 and int(serial_back) == 0
 
     def handle_adjustments_and_counterreset(self):
         """

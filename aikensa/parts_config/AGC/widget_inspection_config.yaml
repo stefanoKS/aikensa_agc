@@ -62,7 +62,7 @@ widgets:
         trim_right: 64
         left_width: 256
         right_width: 256
-        dx_range_left: [15, 43]
+        dx_range_left: [0, 65]
         dx_range_right: [2, 25]
         yolo_conf: 0.1
         yolo_iou: 0.5
@@ -86,7 +86,7 @@ widgets:
         trim_right: 64
         left_width: 256
         right_width: 256
-        dx_range_left: [15, 43]
+        dx_range_left: [5, 55]
         dx_range_right: [2, 25]
         yolo_conf: 0.1
         yolo_iou: 0.5
@@ -150,7 +150,7 @@ widgets:
         trim_right: 64
         left_width: 256
         right_width: 256
-        dx_range_left: [15, 43]
+        dx_range_left: [5, 55]
         dx_range_right: [2, 25]
         yolo_conf: 0.1
         yolo_iou: 0.5
@@ -174,7 +174,7 @@ widgets:
         trim_right: 64
         left_width: 256
         right_width: 256
-        dx_range_left: [15, 43]
+        dx_range_left: [5, 55]
         dx_range_right: [2, 25]
         yolo_conf: 0.1
         yolo_iou: 0.5

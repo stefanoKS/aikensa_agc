@@ -2,14 +2,15 @@ import cv2
 import sys
 import yaml
 import os
+import re
 from enum import Enum
 import time
 
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QStackedWidget, QLabel, QSlider, QMainWindow, QWidget, QCheckBox, QShortcut, QLineEdit, QRadioButton, QComboBox
 from PyQt5.uic import loadUi
-from PyQt5.QtCore import QThread, pyqtSignal, Qt, QCoreApplication
-from PyQt5.QtGui import QImage, QPixmap, QKeySequence
+from PyQt5.QtCore import QThread, pyqtSignal, Qt, QCoreApplication, QRectF
+from PyQt5.QtGui import QImage, QPixmap, QKeySequence, QPainter, QPainterPath
 from aikensa.opencv_imgprocessing.cannydetect import canny_edge_detection
 # from aikensa.opencv_imgprocessing.detectaruco import detectAruco
 from aikensa.opencv_imgprocessing.cameracalibrate import detectCharucoBoard, calculatecameramatrix
@@ -242,6 +243,52 @@ class AIKensa(QMainWindow):
             color = colorOK if pitch_value else colorNG
             labels[i].setStyleSheet(f"QLabel {{ background-color: {color}; }}")
 
+    def _get_label_border_radius(self, label, default_radius=0):
+        match = re.search(r"border-radius\s*:\s*(\d+)px", label.styleSheet() or "")
+        if match:
+            return int(match.group(1))
+        return default_radius
+
+    def _create_rounded_label_pixmap(self, label, pixmap):
+        if not label or pixmap.isNull():
+            return pixmap
+
+        target_size = label.size()
+        if target_size.width() <= 0 or target_size.height() <= 0:
+            return pixmap
+
+        scaled_pixmap = pixmap.scaled(
+            target_size,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+
+        rounded_pixmap = QPixmap(target_size)
+        rounded_pixmap.fill(Qt.transparent)
+
+        painter = QPainter(rounded_pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        clip_path = QPainterPath()
+        radius = self._get_label_border_radius(label, default_radius=10)
+        clip_path.addRoundedRect(QRectF(rounded_pixmap.rect()), radius, radius)
+        painter.setClipPath(clip_path)
+
+        x_offset = (target_size.width() - scaled_pixmap.width()) // 2
+        y_offset = (target_size.height() - scaled_pixmap.height()) // 2
+        painter.drawPixmap(x_offset, y_offset, scaled_pixmap)
+        painter.end()
+
+        return rounded_pixmap
+
+    def _set_rounded_label_image(self, label, image):
+        if not label:
+            return
+
+        pixmap = QPixmap.fromImage(image)
+        label.setPixmap(self._create_rounded_label_pixmap(label, pixmap))
+
     def _setCalibFrame(self, image):
         for i in [1, 2, 3, 4, 5]:
             widget = self.stackedWidget.widget(i)
@@ -288,77 +335,49 @@ class AIKensa(QMainWindow):
             widget = self.stackedWidget.widget(i)
             label1 = widget.findChild(QLabel, "FramePart1")
             if label1:
-                scaled_pixmap = QPixmap.fromImage(image).scaled(
-                    label1.width(), label1.height(),
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                label1.setPixmap(scaled_pixmap)
+                self._set_rounded_label_image(label1, image)
 
     def _setPartFrame2(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label2 = widget.findChild(QLabel, "FramePart2")
             if label2:
-                scaled_pixmap = QPixmap.fromImage(image).scaled(
-                    label2.width(), label2.height(),
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                label2.setPixmap(scaled_pixmap)
+                self._set_rounded_label_image(label2, image)
 
     def _setPartFrame3(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label3 = widget.findChild(QLabel, "FramePart3")
             if label3:
-                scaled_pixmap = QPixmap.fromImage(image).scaled(
-                    label3.width(), label3.height(),
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                label3.setPixmap(scaled_pixmap)
+                self._set_rounded_label_image(label3, image)
 
     def _setPartFrame4(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label4 = widget.findChild(QLabel, "FramePart4")
             if label4:
-                scaled_pixmap = QPixmap.fromImage(image).scaled(
-                    label4.width(), label4.height(),
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                label4.setPixmap(scaled_pixmap)
+                self._set_rounded_label_image(label4, image)
 
     def _setPartFrame5(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label5 = widget.findChild(QLabel, "FramePart5")
             if label5:
-                scaled_pixmap = QPixmap.fromImage(image).scaled(
-                    label5.width(), label5.height(),
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                label5.setPixmap(scaled_pixmap)
+                self._set_rounded_label_image(label5, image)
 
     def _setTrayEmitLeft(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label = widget.findChild(QLabel, "tray_emit_L")
             if label:
-                scaled_pixmap = QPixmap.fromImage(image).scaled(
-                    label.width(), label.height(),
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                label.setPixmap(scaled_pixmap)
+                self._set_rounded_label_image(label, image)
 
     def _setTrayEmitRight(self, image):
         for i in [5]:
             widget = self.stackedWidget.widget(i)
             label = widget.findChild(QLabel, "tray_emit_R")
             if label:
-                scaled_pixmap = QPixmap.fromImage(image).scaled(
-                    label.width(), label.height(),
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                label.setPixmap(scaled_pixmap)
+                self._set_rounded_label_image(label, image)
 
     def _setTapeFrame(self, image):
         """Display tape camera stream on TapeFrame QLabel."""
@@ -366,12 +385,7 @@ class AIKensa(QMainWindow):
         if widget:
             label = widget.findChild(QLabel, "TapeFrame")
             if label:
-                # Scale the image to fit the label
-                scaled_pixmap = QPixmap.fromImage(image).scaled(
-                    label.width(), label.height(),
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                label.setPixmap(scaled_pixmap)
+                self._set_rounded_label_image(label, image)
 
     def _get_agc_widget(self):
         if not hasattr(self, "stackedWidget"):

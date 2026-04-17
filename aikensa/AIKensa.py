@@ -48,6 +48,7 @@ class AIKensa(QMainWindow):
         self.inspection_thread.SerialNumber_signal.connect(self._update_serial_number)
         self.inspection_thread.LotNumber_signal.connect(self._update_lot_number)
         self.inspection_thread.DailyPartsPerHour_signal.connect(self._update_jikan_atari)
+        self.inspection_thread.DailyTotalParts_signal.connect(self._update_honjitsu_goukei)
         self.modbusThread.plcConnectionStatusChanged.connect(self._update_plc_status_label)
         self.modbusThread.start()
         self.inspection_thread.start()
@@ -68,6 +69,7 @@ class AIKensa(QMainWindow):
 
         self._setup_ui()
         self._update_jikan_atari(getattr(self.inspection_thread, "daily_parts_per_hour", 0.0))
+        self._update_honjitsu_goukei(0)
 
         self.initial_colors = {}#store initial colors of the labels
 
@@ -575,6 +577,15 @@ class AIKensa(QMainWindow):
         label = widget.findChild(QLabel, "JIKAN_ATARI")
         if label:
             label.setText(f"{float(parts_per_hour):.1f}")
+
+    def _update_honjitsu_goukei(self, total_parts):
+        widget = self._get_agc_widget()
+        if not widget:
+            return
+
+        label = widget.findChild(QLabel, "HONJITSU_GOUKEI")
+        if label:
+            label.setText(str(total_parts))
 
     def _update_plc_status_label(self, connected: bool):
         widget = self._get_agc_widget()

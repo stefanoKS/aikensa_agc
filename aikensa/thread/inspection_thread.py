@@ -103,6 +103,7 @@ class InspectionThread(QThread):
     SerialNumber_signal = pyqtSignal(str)
     LotNumber_signal = pyqtSignal(str)
     DailyPartsPerHour_signal = pyqtSignal(float)
+    DailyTotalParts_signal = pyqtSignal(int)
 
     def __init__(self, inspection_config: InspectionConfig = None, modbus_thread=None):
         super(InspectionThread, self).__init__()
@@ -751,6 +752,7 @@ class InspectionThread(QThread):
     def run(self):
         self._initialize_sqlite_storage()
         self._emit_daily_parts_per_hour(force=True)
+        self._emit_daily_total_parts()
         self._initialize_mysql_storage()
         try:
             print("Inspection Thread Started")
@@ -1347,18 +1349,20 @@ class InspectionThread(QThread):
         ok_total, ng_total = self.cursor.fetchone()
         self.todayPart_NOP = [int(ok_total), int(ng_total)]
 
-    # Gaps between lot changes longer than this (minutes) are treated as breaks.
+    # Gaps longer than this (minutes) are treated as breaks — both intra-lot and cross-lot.
     BREAK_GAP_THRESHOLD_MIN: float = 30.0
-    # A detected break is replaced by this assumed duration (minutes) in the elapsed-time denominator.
+    # Cross-lot break: the full gap is replaced by this assumed duration (minutes).
     BREAK_GAP_ASSUMED_MIN: float = 5.0
+    # Intra-lot break (same lot number, gap > threshold): replaced by this assumed duration (minutes).
+    INTRA_LOT_BREAK_ASSUMED_MIN: float = 3.0
 
     def _calculate_daily_parts_per_hour(self) -> float:
         """Calculate today's parts-per-hour with break-time compensation.
 
-        Consecutive entries separated by more than BREAK_GAP_THRESHOLD_MIN minutes
-        (across different lot numbers) are treated as a worker break.  The full gap
-        is replaced by BREAK_GAP_ASSUMED_MIN so that long breaks do not artificially
-        deflate the dekidaka rate.
+        Follows the same logic as AgcLotDataProcessor._build_daily_adjusted_elapsed_df:
+        - Cross-lot gap > BREAK_GAP_THRESHOLD_MIN  → replaced by BREAK_GAP_ASSUMED_MIN
+        - Intra-lot gap > BREAK_GAP_THRESHOLD_MIN  → replaced by INTRA_LOT_BREAK_ASSUMED_MIN
+        This prevents long breaks from artificially deflating the dekidaka rate.
         """
         if self.cursor is None:
             return 0.0
@@ -1408,7 +1412,8 @@ class InspectionThread(QThread):
             # Only one data point — use a minimum floor of 1 minute.
             return float(finished_parts / (1 / 60))
 
-        break_assumed_sec = self.BREAK_GAP_ASSUMED_MIN * 60.0
+        cross_lot_break_sec = self.BREAK_GAP_ASSUMED_MIN * 60.0
+        intra_lot_break_sec = self.INTRA_LOT_BREAK_ASSUMED_MIN * 60.0
 
         adjusted_elapsed_sec = 0.0
         for i in range(len(parsed) - 1):
@@ -1417,9 +1422,13 @@ class InspectionThread(QThread):
             gap_sec = (next_ts - current_ts).total_seconds()
             if gap_sec <= 0:
                 continue
-            # Replace long cross-lot gaps (breaks) with the assumed break duration.
-            if current_lot != next_lot and gap_sec / 60.0 > self.BREAK_GAP_THRESHOLD_MIN:
-                adjusted_elapsed_sec += break_assumed_sec
+            if gap_sec / 60.0 > self.BREAK_GAP_THRESHOLD_MIN:
+                # Long cross-lot gap → cross-lot break
+                if current_lot != next_lot:
+                    adjusted_elapsed_sec += cross_lot_break_sec
+                # Long intra-lot gap → intra-lot break
+                else:
+                    adjusted_elapsed_sec += intra_lot_break_sec
             else:
                 adjusted_elapsed_sec += gap_sec
 
@@ -1444,6 +1453,24 @@ class InspectionThread(QThread):
         current_day = datetime.now().strftime("%Y%m%d")
         if current_day != self.last_daily_parts_per_hour_day:
             self._emit_daily_parts_per_hour(force=True)
+
+    def _calculate_daily_total_parts(self) -> int:
+        """Return total parts (OK + NG) produced today across all part types."""
+        if self.cursor is None:
+            return 0
+        self.cursor.execute(
+            """
+            SELECT COALESCE(SUM(ok_add + ng_add), 0)
+            FROM inspection_results
+            WHERE partName IN (5, 6, 7, 8)
+              AND DATE(timestamp) = DATE('now', 'localtime')
+            """
+        )
+        row = self.cursor.fetchone()
+        return int((row[0] if row else None) or 0)
+
+    def _emit_daily_total_parts(self) -> None:
+        self.DailyTotalParts_signal.emit(self._calculate_daily_total_parts())
 
     def _get_scoped_current_offset(self, widget: int) -> list[int]:
         current_lot = self.current_LotNumber or ""
@@ -1490,6 +1517,7 @@ class InspectionThread(QThread):
         )
         self._refresh_current_lot_totals(widget)
         self._emit_daily_parts_per_hour()
+        self._emit_daily_total_parts()
         self.prev_LotNumber = self.current_LotNumber
         self.prev_SerialNumber = self.current_SerialNumber
         self.temp_prev_OK = ok_add

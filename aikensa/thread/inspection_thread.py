@@ -1347,37 +1347,83 @@ class InspectionThread(QThread):
         ok_total, ng_total = self.cursor.fetchone()
         self.todayPart_NOP = [int(ok_total), int(ng_total)]
 
+    # Gaps between lot changes longer than this (minutes) are treated as breaks.
+    BREAK_GAP_THRESHOLD_MIN: float = 30.0
+    # A detected break is replaced by this assumed duration (minutes) in the elapsed-time denominator.
+    BREAK_GAP_ASSUMED_MIN: float = 5.0
+
     def _calculate_daily_parts_per_hour(self) -> float:
+        """Calculate today's parts-per-hour with break-time compensation.
+
+        Consecutive entries separated by more than BREAK_GAP_THRESHOLD_MIN minutes
+        (across different lot numbers) are treated as a worker break.  The full gap
+        is replaced by BREAK_GAP_ASSUMED_MIN so that long breaks do not artificially
+        deflate the dekidaka rate.
+        """
         if self.cursor is None:
             return 0.0
 
+        # Fetch total finished parts for a quick early-exit check.
         self.cursor.execute(
             """
-            SELECT
-                COALESCE(SUM(ok_add + ng_add), 0),
-                MIN(timestamp),
-                MAX(timestamp)
+            SELECT COALESCE(SUM(ok_add + ng_add), 0)
             FROM inspection_results
             WHERE partName IN (5, 6, 7, 8)
+              AND (ok_add > 0 OR ng_add > 0)
               AND DATE(timestamp) = DATE('now', 'localtime')
             """
         )
-        finished_parts, first_time_str, last_time_str = self.cursor.fetchone()
-        finished_parts = int(finished_parts or 0)
+        row = self.cursor.fetchone()
+        finished_parts = int((row[0] if row else None) or 0)
 
-        if finished_parts <= 0 or not first_time_str or not last_time_str:
+        if finished_parts <= 0:
             return 0.0
 
-        try:
-            first_time = datetime.strptime(str(first_time_str), "%Y-%m-%d %H:%M:%S")
-            last_time = datetime.strptime(str(last_time_str), "%Y-%m-%d %H:%M:%S")
-        except ValueError:
+        # Fetch all active records for today, ordered by time.
+        self.cursor.execute(
+            """
+            SELECT timestamp, lotNumber
+            FROM inspection_results
+            WHERE partName IN (5, 6, 7, 8)
+              AND (ok_add > 0 OR ng_add > 0)
+              AND DATE(timestamp) = DATE('now', 'localtime')
+            ORDER BY timestamp ASC
+            """
+        )
+        rows = self.cursor.fetchall()
+
+        if not rows:
             return 0.0
 
-        elapsed_hours = max((last_time - first_time).total_seconds() / 3600.0, 1 / 60)
-        if elapsed_hours <= 0:
-            return 0.0
+        # Parse timestamps and compute break-adjusted elapsed time.
+        fmt = "%Y-%m-%d %H:%M:%S"
+        parsed: list[tuple[datetime, str]] = []
+        for ts_str, lot in rows:
+            try:
+                parsed.append((datetime.strptime(str(ts_str), fmt), str(lot or "")))
+            except ValueError:
+                continue
 
+        if len(parsed) < 2:
+            # Only one data point — use a minimum floor of 1 minute.
+            return float(finished_parts / (1 / 60))
+
+        break_assumed_sec = self.BREAK_GAP_ASSUMED_MIN * 60.0
+
+        adjusted_elapsed_sec = 0.0
+        for i in range(len(parsed) - 1):
+            current_ts, current_lot = parsed[i]
+            next_ts, next_lot = parsed[i + 1]
+            gap_sec = (next_ts - current_ts).total_seconds()
+            if gap_sec <= 0:
+                continue
+            # Replace long cross-lot gaps (breaks) with the assumed break duration.
+            if current_lot != next_lot and gap_sec / 60.0 > self.BREAK_GAP_THRESHOLD_MIN:
+                adjusted_elapsed_sec += break_assumed_sec
+            else:
+                adjusted_elapsed_sec += gap_sec
+
+        elapsed_hours = max(adjusted_elapsed_sec / 3600.0, 1 / 60)
         return float(finished_parts / elapsed_hours)
 
     def _emit_daily_parts_per_hour(self, force: bool = False) -> None:

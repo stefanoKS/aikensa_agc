@@ -449,6 +449,7 @@ class InspectionThread(QThread):
             exposure_us=self.ic4_camera_config.get("exposure_us", 15000),
             gain_db=self.ic4_camera_config.get("gain_db", 10),
             wb_temperature=self.ic4_camera_config.get("wb_temperature", 6500),
+            saturation=self.ic4_camera_config.get("saturation"),
             auto_exposure=bool(self.ic4_camera_config.get("auto_exposure", False)),
             auto_gain=bool(self.ic4_camera_config.get("auto_gain", False)),
             auto_wb=bool(self.ic4_camera_config.get("auto_wb", False)),

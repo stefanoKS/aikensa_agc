@@ -246,6 +246,7 @@ PID_GAIN_AUTO = getattr(ic4.PropId, "GAIN_AUTO", None)
 PID_GAIN = getattr(ic4.PropId, "GAIN", None)
 PID_WB_AUTO = getattr(ic4.PropId, "BALANCE_WHITE_AUTO", None)
 PID_WB_TEMP = getattr(ic4.PropId, "WHITEBALANCE_TEMPERATURE", None)
+PID_SATURATION = getattr(ic4.PropId, "SATURATION", None)
 
 PID_FRAME_RATE = getattr(ic4.PropId, "FRAME_RATE", None)
 PID_ACQ_FRAME_RATE = getattr(ic4.PropId, "ACQUISITION_FRAME_RATE", None)
@@ -281,6 +282,7 @@ class IC4Capture:
         exposure_us: Optional[float] = None,
         gain_db: Optional[float] = None,
         wb_temperature: Optional[int] = None,
+        saturation: Optional[float] = None,
     ):
         _ensure_ic4_context()
 
@@ -311,6 +313,8 @@ class IC4Capture:
         if color and wb_temperature is not None:
             _try_set(pm, (PID_WB_AUTO,), "Off")
             _try_set(pm, (PID_WB_TEMP,), int(wb_temperature))
+        if saturation is not None:
+            _try_set(pm, (PID_SATURATION,), float(saturation))
 
         _try_set(pm, (PID_ACQ_FR_EN,), True)
         self._apply_frame_rate(pm, fps)
@@ -484,6 +488,7 @@ def initialize_camera_ic4(
     exposure_us: Optional[float] = None,
     gain_db: Optional[float] = None,
     wb_temperature: Optional[int] = None,
+    saturation: Optional[float] = None,
     auto_exposure: bool = False,
     auto_gain: bool = False,
     auto_wb: bool = False,
@@ -502,6 +507,7 @@ def initialize_camera_ic4(
             exposure_us,
             gain_db,
             wb_temperature,
+            saturation,
         )
 
         pm = cam._grab.device_property_map

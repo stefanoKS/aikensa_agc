@@ -792,6 +792,8 @@ class InspectionThread(QThread):
                     if self.inspection_config.manual_part_selection == 4:
                         self.partNumber = 1
 
+                self.ensure_models_initialized()
+                
                 if self._inspection_command_pending():
                     self.ensure_models_initialized()
 

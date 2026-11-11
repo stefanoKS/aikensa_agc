@@ -6,10 +6,10 @@ inspection:
   height: 2048
   fps: 25
   color: true
-  exposure_us: 20000
-  gain_db: 15
+  exposure_us: 25000
+  gain_db: 20
   wb_temperature: 6500
-  saturation: 1.0
+  saturation: 150
   auto_exposure: false
   auto_gain: false
   auto_wb: false
